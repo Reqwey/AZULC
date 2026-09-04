@@ -147,7 +147,7 @@ fn launch_authentication_gate(app: &Launcher) -> Element<'_, Message> {
                     .color(theme::TEXT),
                 text("AZULC is refreshing this account before launching. Once verified, this account will not be checked again during the current app session.")
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED)
             ]
             .spacing(14)
@@ -170,7 +170,7 @@ fn launch_authentication_gate(app: &Launcher) -> Element<'_, Message> {
                     scrollable(
                         text(message)
                             .font(theme::BODY_FONT)
-                            .size(10)
+                            .size(12)
                             .color(theme::DANGER)
                     )
                     .height(150)
@@ -181,7 +181,7 @@ fn launch_authentication_gate(app: &Launcher) -> Element<'_, Message> {
                 .style(theme::danger_panel),
                 text("Check your connection and Microsoft application configuration, then retry this account check or cancel only this launch.")
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED),
                 row![
                     Space::new().width(Fill),
@@ -240,7 +240,7 @@ fn delete_confirmation(app: &Launcher) -> Element<'_, Message> {
                     .color(theme::WARNING),
                 text("Saves, mods, resource packs, screenshots, and instance settings in its folder will be permanently removed.")
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::TEXT),
                 row![
                     Space::new().width(Fill),
@@ -324,7 +324,7 @@ fn titlebar_account(app: &Launcher) -> Element<'_, Message> {
                     })
                 )
                 .font(theme::BODY_FONT)
-                .size(8)
+                .size(10)
                 .color(theme::MUTED)
             ]
             .spacing(1),
@@ -441,7 +441,7 @@ fn resize_handle<'a>(
 }
 
 fn sidebar(app: &Launcher) -> Element<'_, Message> {
-    let mut instance_cards = column![].spacing(6);
+    let mut instance_cards = column![].spacing(6).width(Fill);
     let mut has_instance_rows = false;
     let mut instances = app.persisted.instances.iter().collect::<Vec<_>>();
     instances.sort_by_key(|instance| !instance.favorite);
@@ -481,7 +481,7 @@ fn sidebar(app: &Launcher) -> Element<'_, Message> {
                             (job.progress.fraction() * 100.0) as u8
                         ))
                         .font(theme::BODY_FONT)
-                        .size(9)
+                        .size(11)
                         .color(if selected {
                             theme::CANVAS
                         } else {
@@ -507,15 +507,15 @@ fn sidebar(app: &Launcher) -> Element<'_, Message> {
         instance_cards = instance_cards.push(
             text("No local instances yet.")
                 .font(theme::BODY_FONT)
-                .size(10)
+                .size(12)
                 .color(theme::MUTED),
         );
     }
     let library = scrollable(instance_cards)
+        .width(Fill)
         .height(Fill)
         .style(theme::square_scrollable)
-        .spacing(9)
-        .height(Fill);
+        .spacing(9);
 
     container(
         column![
@@ -553,26 +553,36 @@ fn instance_sidebar_button<'a>(app: &Launcher, instance: &'a Instance) -> Elemen
                     instance.minecraft_version, instance.loader.kind
                 ))
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(if selected {
                     theme::CANVAS
                 } else {
                     theme::MUTED
                 })
             ]
-            .spacing(1),
-            Space::new().width(Fill),
+            .spacing(1)
+            .width(Fill),
             text(if launching { "LIVE" } else { "" })
                 .font(theme::BODY_BOLD)
-                .size(8)
+                .size(10)
                 .color(if selected {
                     theme::CANVAS
                 } else {
                     theme::SUCCESS
                 }),
-            text(if instance.favorite { "📌" } else { ">" }).size(14)
+            container(
+                text(if instance.favorite { "📌" } else { ">" })
+                    .size(14)
+                    .width(Fill)
+                    .height(Fill)
+                    .align_x(alignment::Horizontal::Center)
+                    .align_y(alignment::Vertical::Center),
+            )
+            .width(28)
+            .height(32)
         ]
         .spacing(7)
+        .width(Fill)
         .align_y(Alignment::Center),
     )
     .width(Fill)
@@ -604,7 +614,7 @@ fn nav_button(route: Route, active: Route) -> Element<'static, Message> {
             }),
             text(route.label()).size(17),
             Space::new().width(Fill),
-            text(if is_active { "◆" } else { "" }).size(10)
+            text(if is_active { "◆" } else { "" }).size(12)
         ]
         .spacing(12)
         .align_y(Alignment::Center),

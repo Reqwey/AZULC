@@ -15,7 +15,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         text("APP SETTINGS").size(31),
         text("Network routes, runtime inventory, and launcher information.")
             .font(theme::BODY_FONT)
-            .size(11)
+            .size(13)
             .color(theme::MUTED)
     ]]
     .align_y(Alignment::Center);
@@ -58,10 +58,10 @@ fn downloads(app: &Launcher) -> Element<'_, Message> {
         column![
             row![
                 column![
-                    text("CONTENT SOURCE").font(theme::BODY_BOLD).size(10).color(theme::MUTED),
+                    text("CONTENT SOURCE").font(theme::BODY_BOLD).size(12).color(theme::MUTED),
                     text("Applied to Minecraft metadata, libraries, assets, Forge, Fabric, and NeoForge.")
                         .font(theme::BODY_FONT)
-                        .size(10)
+                        .size(12)
                         .color(theme::MUTED)
                 ]
                 .spacing(4),
@@ -78,12 +78,12 @@ fn downloads(app: &Launcher) -> Element<'_, Message> {
             rule::horizontal(1),
             row![
                 column![
-                    text("PARALLEL WORKERS").font(theme::BODY_BOLD).size(10).color(theme::MUTED),
+                    text("PARALLEL WORKERS").font(theme::BODY_BOLD).size(12).color(theme::MUTED),
                     text(format!(
                         "Detected {worker_limit} CPU hardware threads; this defines the worker limit."
                     ))
                         .font(theme::BODY_FONT)
-                        .size(10)
+                        .size(12)
                         .color(theme::MUTED)
                 ]
                 .spacing(4),
@@ -113,7 +113,7 @@ fn downloads(app: &Launcher) -> Element<'_, Message> {
                 text("NETWORK SIGNALS").size(20),
                 text("Round-trip response checks for launcher-critical services.")
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED)
             ]
             .spacing(3),
@@ -131,7 +131,7 @@ fn downloads(app: &Launcher) -> Element<'_, Message> {
             container(
                 text("WAITING FOR NETWORK CHECK…")
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED),
             )
             .width(Fill)
@@ -154,7 +154,7 @@ fn downloads(app: &Launcher) -> Element<'_, Message> {
                             text(&ping.name).size(15),
                             text(&ping.url)
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
                                 .color(theme::MUTED)
                         ]
                         .spacing(2),
@@ -165,7 +165,7 @@ fn downloads(app: &Launcher) -> Element<'_, Message> {
                             "OFFLINE".into()
                         })
                         .font(theme::BODY_BOLD)
-                        .size(11)
+                        .size(13)
                         .color(if ping.reachable {
                             latency_color(ping.latency_ms)
                         } else {
@@ -203,7 +203,7 @@ fn java(app: &Launcher) -> Element<'_, Message> {
                     "AZULC chooses the smallest compatible major version for each Minecraft build."
                 )
                 .font(theme::BODY_FONT)
-                .size(10)
+                .size(12)
                 .color(theme::MUTED)
             ]
             .spacing(3),
@@ -223,7 +223,7 @@ fn java(app: &Launcher) -> Element<'_, Message> {
                     text("NO JAVA FOUND").size(21).color(theme::WARNING),
                     text("Modern Minecraft generally needs Java 17 or 21; legacy builds may need Java 8.")
                         .font(theme::BODY_FONT)
-                        .size(10)
+                        .size(12)
                         .color(theme::MUTED)
                 ]
                 .spacing(5),
@@ -252,21 +252,21 @@ fn java(app: &Launcher) -> Element<'_, Message> {
                                 text(format!("Java {}", runtime.major)).size(18),
                                 text(&runtime.vendor)
                                     .font(theme::BODY_BOLD)
-                                    .size(9)
+                                    .size(11)
                                     .color(theme::LAVENDER)
                             ]
                             .spacing(10)
                             .align_y(Alignment::Center),
                             text(runtime.path.display().to_string())
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
                                 .color(theme::MUTED)
                         ]
                         .spacing(3),
                         Space::new().width(Fill),
                         text(&runtime.version)
                             .font(theme::BODY_BOLD)
-                            .size(10)
+                            .size(12)
                             .color(theme::SUCCESS)
                     ]
                     .spacing(12)
@@ -288,8 +288,18 @@ fn java(app: &Launcher) -> Element<'_, Message> {
 
 fn about(app: &Launcher) -> Element<'_, Message> {
     let architecture = row![
-        about_card("UI", "ICED 0.14", "Native Rust widgets / no webview"),
-        about_card("BUILD", env!("CARGO_PKG_VERSION"), "GPL-3.0-or-later")
+        about_card(
+            "UI",
+            "ICED 0.14",
+            "Native Rust widgets",
+            "https://github.com/iced-rs/iced",
+        ),
+        about_card(
+            "BUILD",
+            env!("CARGO_PKG_VERSION"),
+            "Open Source",
+            "https://github.com/Reqwey/AZULC",
+        )
     ]
     .spacing(12);
     let data = section(
@@ -368,24 +378,42 @@ fn section<'a>(title: &'a str, body: impl Into<Element<'a, Message>>) -> Element
     .into()
 }
 
-fn about_card<'a>(label: &'a str, value: &'a str, detail: &'a str) -> Element<'a, Message> {
-    container(
-        column![
-            text(label)
+fn about_card<'a>(
+    label: &'a str,
+    value: &'a str,
+    detail: &'a str,
+    url: &'static str,
+) -> Element<'a, Message> {
+    button(
+        row![
+            column![
+                text(label)
+                    .font(theme::BODY_BOLD)
+                    .size(13)
+                    .color(theme::MUTED),
+                text(value).size(24).color(theme::LAVENDER_SOFT),
+                text(detail)
+                    .font(theme::BODY_FONT)
+                    .size(13)
+                    .color(theme::TEXT),
+                text(url)
+                    .font(theme::BODY_FONT)
+                    .size(12)
+                    .color(theme::LAVENDER)
+            ]
+            .spacing(4),
+            Space::new().width(Fill),
+            text("OPEN ↗")
                 .font(theme::BODY_BOLD)
-                .size(11)
-                .color(theme::MUTED),
-            text(value).size(24).color(theme::LAVENDER_SOFT),
-            text(detail)
-                .font(theme::BODY_FONT)
-                .size(11)
-                .color(theme::TEXT)
+                .size(12)
+                .color(theme::LAVENDER)
         ]
-        .spacing(4),
+        .align_y(Alignment::Center),
     )
     .width(Fill)
-    .padding(16)
-    .style(theme::stat_card)
+    .padding([17, 18])
+    .on_press(Message::OpenExternalUrl(url))
+    .style(theme::version_card_button)
     .into()
 }
 
@@ -393,12 +421,12 @@ fn info_line(label: &'static str, value: String) -> Element<'static, Message> {
     row![
         text(label)
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(theme::MUTED),
         Space::new().width(Fill),
         text(value)
             .font(theme::BODY_FONT)
-            .size(10)
+            .size(12)
             .color(theme::LAVENDER_SOFT)
     ]
     .into()
@@ -409,14 +437,14 @@ fn path_info_line(label: &'static str, path: std::path::PathBuf) -> Element<'sta
     row![
         text(label)
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(theme::MUTED),
         Space::new().width(Fill),
         text(value)
             .font(theme::BODY_FONT)
-            .size(10)
+            .size(12)
             .color(theme::LAVENDER_SOFT),
-        button(text("OPEN").font(theme::BODY_BOLD).size(10))
+        button(text("OPEN").font(theme::BODY_BOLD).size(12))
             .on_press(Message::OpenFolder(path))
             .padding([5, 9])
             .style(theme::ghost_button)
@@ -441,7 +469,7 @@ fn acknowledgement_card(
                     .color(theme::TEXT),
                 text(url)
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::LAVENDER)
             ]
             .spacing(5),

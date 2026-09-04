@@ -37,7 +37,7 @@ pub(crate) fn instance_color_picker(
                     text(if color == selected { "◆" } else { "◇" })
                         .size(17)
                         .color(accent),
-                    text(color.label()).size(10)
+                    text(color.label()).size(12)
                 ]
                 .spacing(6)
                 .align_y(Alignment::Center),

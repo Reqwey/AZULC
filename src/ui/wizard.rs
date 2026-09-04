@@ -29,7 +29,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
     let page_tabs = row![
         text("NEW INSTANCE")
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(theme::MUTED),
         Space::new().width(18),
         tabs,
@@ -141,7 +141,7 @@ fn step<'a>(
     let mut copy = column![
         text(title)
             .font(theme::BODY_BOLD)
-            .size(11)
+            .size(13)
             .color(title_color)
     ]
     .spacing(1);
@@ -149,7 +149,7 @@ fn step<'a>(
         copy = copy.push(
             text(subtitle)
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(if current {
                     theme::LAVENDER_SOFT
                 } else {
@@ -262,19 +262,19 @@ fn version_step(app: &Launcher) -> Element<'_, Message> {
                             text(&version.id).size(17),
                             text(version_badge(version))
                                 .font(theme::BODY_BOLD)
-                                .size(9)
+                                .size(11)
                                 .color(accent)
                         ]
                         .spacing(9)
                         .align_y(Alignment::Center),
                         text(released)
                             .font(theme::BODY_FONT)
-                            .size(10)
+                            .size(12)
                             .color(theme::MUTED)
                     ]
                     .spacing(3),
                     Space::new().width(Fill),
-                    text("WORLD  >").font(theme::BODY_BOLD).size(9)
+                    text("WORLD  >").font(theme::BODY_BOLD).size(11)
                 ]
                 .spacing(9)
                 .align_y(Alignment::Center),
@@ -300,7 +300,7 @@ fn version_step(app: &Launcher) -> Element<'_, Message> {
                     .color(theme::MUTED),
                     text("Try another channel or search term.")
                         .font(theme::BODY_FONT)
-                        .size(11)
+                        .size(13)
                         .color(theme::MUTED)
                 ]
                 .spacing(5),
@@ -346,7 +346,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                         text(loader.label()).size(19),
                         text(detail)
                             .font(theme::BODY_FONT)
-                            .size(10)
+                            .size(12)
                             .color(if selected {
                                 theme::CANVAS
                             } else {
@@ -357,7 +357,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                     Space::new().width(Fill),
                     text(if selected { "SELECTED" } else { ">" })
                         .font(theme::BODY_BOLD)
-                        .size(10)
+                        .size(12)
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),
@@ -378,7 +378,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
         column![
             text("LOADER BUILD")
                 .font(theme::BODY_BOLD)
-                .size(10)
+                .size(12)
                 .color(theme::LAVENDER),
             text(app.wizard.loader.label()).size(28),
             text(format!(
@@ -389,7 +389,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                     .unwrap_or("not selected")
             ))
             .font(theme::BODY_FONT)
-            .size(11)
+            .size(13)
             .color(theme::MUTED)
         ]
         .spacing(3),
@@ -397,11 +397,11 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
         column![
             text(format!("{} BUILDS", app.loader_catalog.entries.len()))
                 .font(theme::BODY_BOLD)
-                .size(11)
+                .size(13)
                 .color(theme::TEXT),
             text(provider)
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED)
         ]
         .spacing(2)
@@ -415,7 +415,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                 text("NO LOADER PACKAGE REQUIRED").size(19),
                 text("The base Minecraft profile will be installed without a mod-loader layer.")
                     .font(theme::BODY_FONT)
-                    .size(11)
+                    .size(13)
                     .color(theme::MUTED)
             ]
             .spacing(5),
@@ -433,7 +433,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                     .color(theme::LAVENDER_SOFT),
                 text("Reading the loader catalog for the selected Minecraft version.")
                     .font(theme::BODY_FONT)
-                    .size(11)
+                    .size(13)
                     .color(theme::MUTED)
             ]
             .spacing(5),
@@ -449,7 +449,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                 text("CATALOG REQUEST FAILED").size(19).color(theme::DANGER),
                 text(error)
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::TEXT),
                 button(text("RETRY CATALOG").size(13))
                     .on_press(Message::RetryLoaderCatalog)
@@ -493,7 +493,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                             text(&entry.version).size(16),
                             text(metadata)
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
                                 .color(if selected {
                                     theme::CANVAS
                                 } else {
@@ -504,7 +504,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                         Space::new().width(Fill),
                         text(if entry.stable { "STABLE" } else { "TEST" })
                             .font(theme::BODY_BOLD)
-                            .size(9)
+                            .size(11)
                             .color(if selected {
                                 theme::CANVAS
                             } else if entry.stable {
@@ -533,7 +533,7 @@ fn loader_step(app: &Launcher) -> Element<'_, Message> {
                         text("NO COMPATIBLE BUILDS").size(19),
                         text("This loader does not publish a build for the selected Minecraft version.")
                             .font(theme::BODY_FONT)
-                            .size(11)
+                            .size(13)
                             .color(theme::MUTED)
                     ]
                     .spacing(5),
@@ -589,10 +589,10 @@ fn details_step(app: &Launcher) -> Element<'_, Message> {
             ),
             container(
                 column![
-                    text("INSTANCE ISOLATION").font(theme::BODY_BOLD).size(10).color(theme::SUCCESS),
+                    text("INSTANCE ISOLATION").font(theme::BODY_BOLD).size(12).color(theme::SUCCESS),
                     text("A dedicated game directory will be created under AZULC data. Shared libraries and assets remain deduplicated.")
                         .font(theme::BODY_FONT)
-                        .size(10)
+                        .size(12)
                         .color(theme::MUTED)
                 ]
                 .spacing(5)
@@ -612,7 +612,7 @@ fn details_step(app: &Launcher) -> Element<'_, Message> {
         column![
             text("BUILD SUMMARY")
                 .font(theme::BODY_BOLD)
-                .size(10)
+                .size(12)
                 .color(theme::LAVENDER),
             media::instance_marker(app.wizard.color, 47),
             text(&app.wizard.name).size(25),
@@ -647,7 +647,7 @@ fn field<'a>(label: &'a str, control: impl Into<Element<'a, Message>>) -> Elemen
     column![
         text(label)
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(theme::MUTED),
         control.into()
     ]
@@ -659,12 +659,12 @@ fn summary_line<'a>(label: &'a str, value: String) -> Element<'a, Message> {
     row![
         text(label)
             .font(theme::BODY_BOLD)
-            .size(9)
+            .size(11)
             .color(theme::MUTED),
         Space::new().width(Fill),
         text(value)
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(theme::LAVENDER_SOFT)
     ]
     .width(Fill)

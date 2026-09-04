@@ -15,7 +15,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
             text("PLAYER ACCOUNTS").size(31),
             text("Microsoft accounts are supported for normal play. Offline profiles are temporary launch-test tools.")
                 .font(theme::BODY_FONT)
-                .size(11)
+                .size(13)
                 .color(theme::TEXT)
         ]
     ]
@@ -29,7 +29,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                 Space::new().width(Fill),
                 text("DEVELOPER ONLY")
                     .font(theme::BODY_BOLD)
-                    .size(9)
+                    .size(11)
                     .color(theme::WARNING)
             ]
             .align_y(Alignment::Center),
@@ -37,7 +37,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                 "Temporary launch-testing path. It will be removed before production distribution."
             )
             .font(theme::BODY_FONT)
-            .size(10)
+            .size(12)
             .color(theme::WARNING),
             row![
                 text_input("Steve", &app.account_input)
@@ -70,7 +70,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                     text("NO PLAYER PROFILE").size(21).color(theme::WARNING),
                     text("Sign in with Microsoft to launch a licensed Minecraft account.")
                         .font(theme::BODY_FONT)
-                        .size(11)
+                        .size(13)
                         .color(theme::TEXT)
                 ]
                 .spacing(5),
@@ -88,7 +88,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
             offline_panel,
             text("AVAILABLE PROFILES")
                 .font(theme::BODY_BOLD)
-                .size(10)
+                .size(12)
                 .color(theme::MUTED),
             list,
             Space::new().height(24)
@@ -126,7 +126,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
                 text("MICROSOFT ACCOUNT").size(20),
                 text("Official device-code sign-in · Xbox Live · Minecraft Services")
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::TEXT)
             ]
             .spacing(3),
@@ -144,7 +144,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
                 microsoft::CLIENT_ID_ENV
             ))
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(theme::WARNING),
         );
     }
@@ -154,7 +154,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
                 column![
                     text("ENTER THIS CODE")
                         .font(theme::BODY_BOLD)
-                        .size(9)
+                        .size(11)
                         .color(theme::MUTED),
                     button(text(&login.user_code).size(26).color(theme::LAVENDER_SOFT))
                         .on_press(Message::CopyMicrosoftLoginCode)
@@ -162,7 +162,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
                         .style(theme::ghost_button),
                     text("CLICK TO COPY")
                         .font(theme::BODY_BOLD)
-                        .size(8)
+                        .size(10)
                         .color(theme::MUTED)
                 ]
                 .spacing(3),
@@ -170,11 +170,11 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
                 column![
                     text(&login.status)
                         .font(theme::BODY_BOLD)
-                        .size(11)
+                        .size(13)
                         .color(theme::TEXT),
                     text(&login.verification_url)
                         .font(theme::BODY_FONT)
-                        .size(10)
+                        .size(12)
                         .color(theme::LAVENDER)
                 ]
                 .spacing(4)
@@ -185,7 +185,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
         content = content.push(
             text(&login.status)
                 .font(theme::BODY_BOLD)
-                .size(11)
+                .size(13)
                 .color(theme::LAVENDER),
         );
     }
@@ -194,7 +194,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
             container(
                 text(error)
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::DANGER),
             )
             .width(Fill)
@@ -219,7 +219,7 @@ fn account_row(account: &OfflineAccount, selected: bool) -> Element<'_, Message>
                     text(&account.username).size(19),
                     text(account.provider.to_string().to_uppercase())
                         .font(theme::BODY_BOLD)
-                        .size(9)
+                        .size(11)
                         .color(if account.provider == AccountProvider::Microsoft {
                             theme::SUCCESS
                         } else {
@@ -230,14 +230,14 @@ fn account_row(account: &OfflineAccount, selected: bool) -> Element<'_, Message>
                 .align_y(Alignment::Center),
                 text(account.uuid.hyphenated().to_string())
                     .font(theme::BODY_FONT)
-                    .size(9)
+                    .size(11)
                     .color(theme::MUTED)
             ]
             .spacing(3),
             Space::new().width(Fill),
             text(if selected { "ACTIVE" } else { "STANDBY" })
                 .font(theme::BODY_BOLD)
-                .size(9)
+                .size(11)
                 .color(if selected {
                     theme::SUCCESS
                 } else {

@@ -31,13 +31,13 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         stat_card(
             "INSTANCES",
             app.persisted.instances.len().to_string(),
-            "installed workspaces",
+            "installed",
             theme::LAVENDER,
         ),
         stat_card(
             "WORLDS",
             app.insights.total_worlds.to_string(),
-            "local saves detected",
+            "local saves",
             theme::SUCCESS,
         ),
         stat_card(
@@ -53,19 +53,19 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         version_card(
             "LATEST RELEASE",
             &app.highlights.release,
-            "stable channel",
+            "stable",
             VersionFilter::Release,
         ),
         version_card(
             "LATEST SNAPSHOT",
             &app.highlights.snapshot,
-            "preview channel",
+            "preview",
             VersionFilter::Snapshot,
         ),
         version_card(
             "APRIL FOOLS",
             app.highlights.april_fools.as_deref().unwrap_or_default(),
-            "latest experiment",
+            "for fun",
             VersionFilter::AprilFools,
         ),
     ]
@@ -104,7 +104,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                 column![
                     text("QUICK LAUNCH")
                         .font(theme::BODY_BOLD)
-                        .size(10)
+                        .size(12)
                         .color(theme::MUTED),
                     text(selected.map_or("Choose an instance", |instance| instance.name.as_str()))
                         .size(22),
@@ -114,7 +114,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                         })
                     )
                     .font(theme::BODY_FONT)
-                    .size(11)
+                    .size(13)
                     .color(theme::MUTED)
                 ]
                 .spacing(4),
@@ -191,12 +191,12 @@ fn stat_card<'a>(
         column![
             text(label)
                 .font(theme::BODY_BOLD)
-                .size(10)
+                .size(12)
                 .color(theme::MUTED),
             text(value).size(31).color(accent),
             text(detail)
                 .font(theme::BODY_FONT)
-                .size(10)
+                .size(12)
                 .color(theme::MUTED)
         ]
         .spacing(5),
@@ -218,12 +218,12 @@ fn version_card<'a>(
             column![
                 text(label)
                     .font(theme::BODY_BOLD)
-                    .size(9)
+                    .size(11)
                     .color(theme::MUTED),
                 text(present(version)).size(21).color(theme::LAVENDER_SOFT),
                 text(detail)
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED)
             ]
             .spacing(4),

@@ -61,7 +61,7 @@ fn instance_detail<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a,
                 &instance.description
             })
             .font(theme::BODY_FONT)
-            .size(11)
+            .size(13)
             .color(theme::MUTED)
         ]
         .spacing(4),
@@ -153,11 +153,11 @@ fn overview<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Messag
             column![
                 text("WORKSPACE PATH")
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED),
                 text(instance.game_dir.display().to_string())
                     .font(theme::BODY_FONT)
-                    .size(11)
+                    .size(13)
                     .color(theme::LAVENDER_SOFT)
             ]
             .spacing(5)
@@ -244,7 +244,7 @@ fn content_list<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Me
             text(app.instance_tab.label().to_uppercase()).size(21),
             text(item_count)
                 .font(theme::BODY_BOLD)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED)
         ]
         .spacing(1),
@@ -267,7 +267,7 @@ fn content_list<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Me
                     text("SCANNING WORKSPACE…").size(20).color(theme::LAVENDER),
                     text("Reading direct children without touching game data.")
                         .font(theme::BODY_FONT)
-                        .size(11)
+                        .size(13)
                         .color(theme::MUTED)
                 ]
                 .spacing(7),
@@ -298,7 +298,7 @@ fn content_list<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Me
                         text(&entry.name).size(16),
                         text(metadata)
                             .font(theme::BODY_FONT)
-                            .size(9)
+                            .size(11)
                             .color(theme::MUTED)
                     ]
                     .spacing(2),
@@ -309,7 +309,7 @@ fn content_list<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Me
                         "OPEN  >"
                     })
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::LAVENDER)
                 ]
                 .spacing(12)
@@ -346,7 +346,7 @@ fn content_list<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Me
                     .color(theme::MUTED),
                     text(hint)
                         .font(theme::BODY_FONT)
-                        .size(11)
+                        .size(13)
                         .color(theme::MUTED),
                     button(text("OPEN INSTANCE FOLDER").size(13))
                         .on_press(Message::OpenPath(instance.game_dir.clone()))
@@ -393,7 +393,7 @@ fn instance_settings<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'
             column![
                 text("MARKER COLOR")
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED),
                 media::instance_color_picker(instance.color, Message::EditInstanceColor)
             ]
@@ -412,7 +412,7 @@ fn instance_settings<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'
     } else if app.java_runtimes.is_empty() {
         text("No detected Java runtime is available for manual selection.")
             .font(theme::BODY_FONT)
-            .size(10)
+            .size(12)
             .color(theme::WARNING)
             .into()
     } else {
@@ -425,7 +425,7 @@ fn instance_settings<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'
                         text(format!("JAVA {}", runtime.major)).size(13),
                         text(&runtime.vendor)
                             .font(theme::BODY_FONT)
-                            .size(9)
+                            .size(11)
                             .color(if selected {
                                 theme::CANVAS
                             } else {
@@ -434,7 +434,7 @@ fn instance_settings<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'
                         Space::new().width(Fill),
                         text(if selected { "SELECTED" } else { "USE" })
                             .font(theme::BODY_BOLD)
-                            .size(9)
+                            .size(11)
                     ]
                     .spacing(8)
                     .align_y(Alignment::Center),
@@ -514,7 +514,7 @@ fn instance_settings<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'
             ),
             text("AVAILABLE MEMORY REFRESHES EVERY 2 SECONDS")
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED),
             labeled_input(
                 "CUSTOM WINDOW TITLE",
@@ -584,14 +584,14 @@ fn install_job(job: &InstallJob) -> Element<'_, Message> {
                 }
             ))
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
             .color(color),
         );
         if index + 1 < steps.len() {
             rail = rail.push(
                 text("──")
                     .font(theme::BODY_FONT)
-                    .size(9)
+                    .size(11)
                     .color(theme::BORDER),
             );
         }
@@ -613,7 +613,7 @@ fn install_job(job: &InstallJob) -> Element<'_, Message> {
             column.push(
                 text(line)
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .width(Fill)
                     .wrapping(Wrapping::WordOrGlyph)
                     .color(theme::MUTED),
@@ -659,7 +659,7 @@ fn install_job(job: &InstallJob) -> Element<'_, Message> {
             column![
                 text("INSTALL PIPELINE")
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED),
                 text(&job.request.name).size(30),
                 text(format!(
@@ -667,7 +667,7 @@ fn install_job(job: &InstallJob) -> Element<'_, Message> {
                     job.request.minecraft_version, job.request.loader.kind
                 ))
                 .font(theme::BODY_FONT)
-                .size(11)
+                .size(13)
                 .color(theme::LAVENDER)
             ]
             .spacing(4),
@@ -688,7 +688,7 @@ fn install_job(job: &InstallJob) -> Element<'_, Message> {
                     .style(theme::square_progress),
                 text(stats)
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED)
             ]
             .spacing(13)
@@ -730,7 +730,7 @@ fn launch_session(session: &LaunchSession) -> Element<'_, Message> {
             column.push(
                 text(line)
                     .font(theme::BODY_FONT)
-                    .size(9)
+                    .size(11)
                     .width(Fill)
                     .wrapping(Wrapping::WordOrGlyph)
                     .color(theme::MUTED),
@@ -759,14 +759,14 @@ fn launch_session(session: &LaunchSession) -> Element<'_, Message> {
                     .size(19),
                     text(&session.status)
                         .font(theme::BODY_BOLD)
-                        .size(10)
+                        .size(12)
                         .color(color)
                 ]
                 .spacing(3),
                 Space::new().width(Fill),
                 text(if session.active { "LIVE" } else { "ENDED" })
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(color)
             ],
             container(
@@ -803,7 +803,7 @@ fn section<'a>(title: &'a str, content: impl Into<Element<'a, Message>>) -> Elem
         column![
             text(title)
                 .font(theme::BODY_BOLD)
-                .size(11)
+                .size(13)
                 .color(theme::LAVENDER),
             content.into()
         ]
@@ -824,7 +824,7 @@ fn labeled_input<'a>(
     column![
         text(label)
             .font(theme::BODY_BOLD)
-            .size(9)
+            .size(11)
             .color(theme::MUTED),
         text_input(placeholder, value)
             .on_input(on_input)
@@ -845,12 +845,12 @@ fn setting_slider<'a>(
         row![
             text(label)
                 .font(theme::BODY_BOLD)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED),
             Space::new().width(Fill),
             text(value)
                 .font(theme::BODY_BOLD)
-                .size(10)
+                .size(12)
                 .color(theme::LAVENDER)
         ],
         control.into()
@@ -869,12 +869,12 @@ fn info_card<'a>(
         column![
             text(label)
                 .font(theme::BODY_BOLD)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED),
             text(value).size(23).color(color),
             text(detail)
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED)
         ]
         .spacing(4),

@@ -5,6 +5,12 @@ use std::{
     process::Command,
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 pub async fn detect() -> Vec<JavaRuntime> {
     tokio::task::spawn_blocking(detect_blocking)
         .await
@@ -20,7 +26,13 @@ fn detect_blocking() -> Vec<JavaRuntime> {
     }
 
     #[cfg(windows)]
-    if let Ok(output) = Command::new("where.exe").arg("java").output() {
+    let where_output = {
+        let mut command = Command::new("where.exe");
+        command.arg("java").creation_flags(CREATE_NO_WINDOW);
+        command.output()
+    };
+    #[cfg(windows)]
+    if let Ok(output) = where_output {
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             candidates.insert(PathBuf::from(line.trim()));
         }
@@ -93,12 +105,10 @@ fn scan_java_root(root: &Path, executable: &str, out: &mut HashSet<PathBuf>) {
 }
 
 fn inspect(path: PathBuf) -> Option<JavaRuntime> {
-    #[cfg(windows)]
-    use std::os::windows::process::CommandExt;
     let mut command = Command::new(&path);
     command.args(["-XshowSettings:properties", "-version"]);
     #[cfg(windows)]
-    command.creation_flags(0x08000000);
+    command.creation_flags(CREATE_NO_WINDOW);
     let output = command.output().ok()?;
     let text = format!(
         "{}\n{}",

@@ -7,7 +7,10 @@ use crate::{
     services::{modpack::ModpackFormat, providers::curseforge},
     theme,
 };
-use iced::widget::{Space, button, column, container, row, rule, scrollable, text, text_input};
+use iced::widget::text::Wrapping;
+use iced::widget::{
+    Space, button, column, container, rich_text, row, rule, scrollable, span, text, text_input,
+};
 use iced::{Alignment, Color, Element, Fill, Length, alignment};
 
 use super::{SCROLLBAR_GAP, media};
@@ -18,7 +21,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
             text("MODPACK DEPOT").size(30),
             text("CURSEFORGE + MODRINTH // ONE CONTINUOUS INSTALL PIPELINE")
                 .font(theme::BODY_BOLD)
-                .size(9)
+                .size(11)
                 .color(theme::LAVENDER)
         ]
         .spacing(2),
@@ -67,14 +70,14 @@ fn browse(app: &Launcher) -> Element<'_, Message> {
                     column![
                         text("CURSEFORGE KEY REQUIRED")
                             .font(theme::BODY_BOLD)
-                            .size(10)
+                            .size(12)
                             .color(theme::WARNING),
                         text(format!(
                             "Set {} before starting AZULC. Credentials are never stored in launcher data.",
                             curseforge::API_KEY_ENV
                         ))
                         .font(theme::BODY_FONT)
-                        .size(9)
+                        .size(11)
                         .color(theme::TEXT)
                     ]
                     .spacing(2)
@@ -100,7 +103,7 @@ fn browse(app: &Launcher) -> Element<'_, Message> {
         container(
             text(error)
                 .font(theme::BODY_FONT)
-                .size(10)
+                .size(12)
                 .color(theme::DANGER),
         )
         .width(Fill)
@@ -123,14 +126,14 @@ fn catalog_provider_tabs(selected: CatalogProvider) -> Element<'static, Message>
     let mut tabs = row![
         text("DOWNLOAD SOURCE")
             .font(theme::BODY_BOLD)
-            .size(9)
+            .size(11)
             .color(theme::MUTED)
     ]
     .spacing(7)
     .align_y(Alignment::Center);
     for provider in CatalogProvider::ALL {
         tabs = tabs.push(
-            button(text(provider.label().to_uppercase()).size(11))
+            button(text(provider.label().to_uppercase()).size(13))
                 .on_press(Message::ModpackProviderPicked(provider))
                 .padding([8, 12])
                 .style(if selected == provider {
@@ -148,7 +151,7 @@ fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> El
         column![
             text("FIND A PACK")
                 .font(theme::BODY_BOLD)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED),
             text_input("Search modpacks by name…", &browser.query)
                 .on_input(Message::ModpackQueryChanged)
@@ -168,7 +171,7 @@ fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> El
             text(format!("{:02}", browser.projects.len())).size(23),
             text("RESULTS")
                 .font(theme::BODY_BOLD)
-                .size(8)
+                .size(10)
                 .color(theme::MUTED)
         ]
         .spacing(0)
@@ -190,7 +193,7 @@ fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> El
                     .color(theme::LAVENDER),
                     text("Popular modpacks are being indexed.")
                         .font(theme::BODY_FONT)
-                        .size(10)
+                        .size(12)
                         .color(theme::MUTED)
                 ]
                 .spacing(4),
@@ -214,26 +217,32 @@ fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> El
                     row![
                         media::thumbnail(app.catalog_thumbnail(project), "▦"),
                         column![
-                            row![
-                                text(&project.name).size(18),
-                                text(if available {
-                                    browser.provider.label().to_uppercase()
-                                } else {
-                                    "RESTRICTED".to_string()
-                                })
+                            rich_text([
+                                span(project.name.as_str()).size(18),
+                                span(format!(
+                                    "  {}",
+                                    if available {
+                                        browser.provider.label().to_uppercase()
+                                    } else {
+                                        "RESTRICTED".to_string()
+                                    }
+                                ))
                                 .font(theme::BODY_BOLD)
-                                .size(8)
+                                .size(10)
                                 .color(if available {
                                     theme::LAVENDER
                                 } else {
                                     theme::DANGER
-                                })
-                            ]
-                            .spacing(9)
-                            .align_y(Alignment::Center),
+                                }),
+                            ])
+                            .on_link_click(iced::never)
+                            .width(Fill)
+                            .wrapping(Wrapping::WordOrGlyph),
                             text(&project.summary)
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
+                                .width(Fill)
+                                .wrapping(Wrapping::WordOrGlyph)
                                 .color(theme::MUTED),
                             text(format!(
                                 "{} DOWNLOADS  //  {}  //  {}",
@@ -246,17 +255,20 @@ fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> El
                                 }
                             ))
                             .font(theme::BODY_BOLD)
-                            .size(8)
+                            .size(10)
+                            .width(Fill)
+                            .wrapping(Wrapping::WordOrGlyph)
                             .color(theme::LAVENDER_SOFT)
                         ]
-                        .spacing(4),
-                        Space::new().width(Fill),
+                        .spacing(4)
+                        .width(Fill),
                         column![
                             text(short_date(&project.date_modified))
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
+                                .wrapping(Wrapping::None)
                                 .color(theme::MUTED),
-                            text("RELEASES  >").font(theme::BODY_BOLD).size(10).color(
+                            text("RELEASES  >").font(theme::BODY_BOLD).size(12).color(
                                 if available {
                                     theme::LAVENDER
                                 } else {
@@ -265,6 +277,7 @@ fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> El
                             )
                         ]
                         .spacing(7)
+                        .width(Length::Fixed(132.0))
                         .align_x(alignment::Horizontal::Right)
                     ]
                     .spacing(12)
@@ -305,27 +318,33 @@ fn project_files<'a>(
     project: &'a CatalogProject,
 ) -> Element<'a, Message> {
     let top = row![
-        button(text("<  ALL MODPACKS").size(11))
+        button(text("<  ALL MODPACKS").size(13))
             .on_press(Message::ModpackBackToProjects)
             .padding([9, 12])
             .style(theme::ghost_button),
         media::thumbnail(app.catalog_thumbnail(project), "▦"),
         column![
-            text(&project.name).size(23),
+            text(&project.name)
+                .size(23)
+                .width(Fill)
+                .wrapping(Wrapping::WordOrGlyph),
             text(&project.summary)
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
+                .width(Fill)
+                .wrapping(Wrapping::WordOrGlyph)
                 .color(theme::MUTED)
         ]
-        .spacing(2),
-        Space::new().width(Fill),
+        .spacing(2)
+        .width(Fill),
         column![
             text(format!("{:02}", browser.files.len())).size(23),
             text("RELEASES")
                 .font(theme::BODY_BOLD)
-                .size(8)
+                .size(10)
                 .color(theme::MUTED)
         ]
+        .width(Length::Fixed(90.0))
         .align_x(alignment::Horizontal::Right)
     ]
     .spacing(12)
@@ -358,17 +377,23 @@ fn project_files<'a>(
                             .style(theme::inset),
                         column![
                             row![
-                                text(&file.display_name).size(16),
+                                text(&file.display_name)
+                                    .size(16)
+                                    .width(Fill)
+                                    .wrapping(Wrapping::WordOrGlyph),
                                 text(release_label(file.release_type))
                                     .font(theme::BODY_BOLD)
-                                    .size(8)
+                                    .size(10)
                                     .color(release_color(file.release_type))
                             ]
                             .spacing(8)
+                            .width(Fill)
                             .align_y(Alignment::Center),
                             text(&file.file_name)
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
+                                .width(Fill)
+                                .wrapping(Wrapping::WordOrGlyph)
                                 .color(theme::MUTED),
                             text(format!(
                                 "MC {}  //  {}  //  {} DOWNLOADS",
@@ -377,15 +402,18 @@ fn project_files<'a>(
                                 compact_number(file.download_count)
                             ))
                             .font(theme::BODY_BOLD)
-                            .size(8)
+                            .size(10)
+                            .width(Fill)
+                            .wrapping(Wrapping::WordOrGlyph)
                             .color(theme::LAVENDER_SOFT)
                         ]
-                        .spacing(3),
-                        Space::new().width(Fill),
+                        .spacing(3)
+                        .width(Fill),
                         column![
                             text(short_date(&file.file_date))
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
+                                .wrapping(Wrapping::None)
                                 .color(theme::MUTED),
                             button(
                                 text(if installable {
@@ -406,6 +434,7 @@ fn project_files<'a>(
                             })
                         ]
                         .spacing(5)
+                        .width(Length::Fixed(145.0))
                         .align_x(alignment::Horizontal::Right)
                     ]
                     .spacing(12)
@@ -445,13 +474,13 @@ fn import_file(app: &Launcher) -> Element<'_, Message> {
                 text("IMPORT AN EXISTING PACK").size(22),
                 text("CURSEFORGE ZIP  //  MODRINTH MRPACK  //  MULTIMC ZIP")
                     .font(theme::BODY_BOLD)
-                    .size(8)
+                    .size(10)
                     .color(theme::LAVENDER),
                 text(
                     "AZULC reads the manifest first, then installs Minecraft, the loader, pack files, and overrides as one tracked job.",
                 )
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(theme::MUTED)
             ]
             .spacing(5),
@@ -476,11 +505,11 @@ fn import_file(app: &Launcher) -> Element<'_, Message> {
                     .color(theme::LAVENDER_SOFT),
                 text(path_label(app.modpacks.local_path.as_deref()))
                     .font(theme::BODY_FONT)
-                    .size(9)
+                    .size(11)
                     .color(theme::MUTED),
                 text("Validating manifest paths, file limits, Minecraft version, and loader metadata.")
                     .font(theme::BODY_FONT)
-                    .size(9)
+                    .size(11)
                     .color(theme::MUTED)
             ]
             .spacing(5),
@@ -503,19 +532,19 @@ fn import_file(app: &Launcher) -> Element<'_, Message> {
                     column![
                         text("MANIFEST READY")
                             .font(theme::BODY_BOLD)
-                            .size(9)
+                            .size(11)
                             .color(theme::SUCCESS),
                         text(&metadata.name).size(27),
                         text(path_label(app.modpacks.local_path.as_deref()))
                             .font(theme::BODY_FONT)
-                            .size(9)
+                            .size(11)
                             .color(theme::MUTED)
                     ]
                     .spacing(3),
                     Space::new().width(Fill),
                     text(format_label(plan.format))
                         .font(theme::BODY_BOLD)
-                        .size(10)
+                        .size(12)
                         .color(theme::LAVENDER)
                 ]
                 .align_y(Alignment::Center),
@@ -538,15 +567,15 @@ fn import_file(app: &Launcher) -> Element<'_, Message> {
                     column![
                         text("AUTHOR")
                             .font(theme::BODY_BOLD)
-                            .size(8)
+                            .size(10)
                             .color(theme::MUTED),
                         text(metadata.author.as_deref().unwrap_or("Not provided"))
                             .font(theme::BODY_FONT)
-                            .size(10)
+                            .size(12)
                     ]
                     .spacing(3),
                     Space::new().width(Fill),
-                    button(text("CHOOSE ANOTHER").size(11))
+                    button(text("CHOOSE ANOTHER").size(13))
                         .on_press(Message::ChooseLocalModpack)
                         .padding([9, 12])
                         .style(theme::ghost_button),
@@ -571,7 +600,7 @@ fn import_file(app: &Launcher) -> Element<'_, Message> {
                 text("NO ARCHIVE SELECTED").size(21).color(theme::MUTED),
                 text("Choose a supported local pack to inspect its contents before installation.")
                     .font(theme::BODY_FONT)
-                    .size(10)
+                    .size(12)
                     .color(theme::MUTED)
             ]
             .spacing(5),
@@ -588,11 +617,11 @@ fn import_file(app: &Launcher) -> Element<'_, Message> {
             column![
                 text("ARCHIVE COULD NOT BE READ")
                     .font(theme::BODY_BOLD)
-                    .size(10)
+                    .size(12)
                     .color(theme::DANGER),
                 text(error)
                     .font(theme::BODY_FONT)
-                    .size(9)
+                    .size(11)
                     .color(theme::TEXT)
             ]
             .spacing(3),
@@ -616,7 +645,7 @@ fn manifest_stat(label: &'static str, value: String) -> Element<'static, Message
         column![
             text(label)
                 .font(theme::BODY_BOLD)
-                .size(8)
+                .size(10)
                 .color(theme::MUTED),
             text(value).size(15).color(theme::LAVENDER_SOFT)
         ]
@@ -634,7 +663,7 @@ fn empty_catalog<'a>(title: &'a str, detail: &'a str) -> iced::widget::Container
             text(title).size(20).color(theme::MUTED),
             text(detail)
                 .font(theme::BODY_FONT)
-                .size(10)
+                .size(12)
                 .color(theme::MUTED)
         ]
         .spacing(5),

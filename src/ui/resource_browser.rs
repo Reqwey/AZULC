@@ -6,10 +6,11 @@ use crate::{
     services::{content::ContentKind, providers::curseforge},
     theme,
 };
+use iced::widget::text::Wrapping;
 use iced::widget::{
     Space, button, column, container, opaque, row, rule, scrollable, text, text_input,
 };
-use iced::{Alignment, Element, Fill, alignment};
+use iced::{Alignment, Element, Fill, Length, alignment};
 
 use super::{SCROLLBAR_GAP, media};
 
@@ -27,7 +28,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                 instance_version(app, browser)
             ))
             .font(theme::BODY_FONT)
-            .size(10)
+            .size(12)
             .color(theme::MUTED)
         ]
         .spacing(2),
@@ -47,14 +48,14 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
             column![
                 text("CURSEFORGE KEY REQUIRED")
                     .font(theme::BODY_BOLD)
-                    .size(11)
+                    .size(13)
                     .color(theme::WARNING),
                 text(format!(
                     "Set {} before starting AZULC. The key is never written to launcher data or logs.",
                     curseforge::API_KEY_ENV
                 ))
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
                 .color(theme::TEXT)
             ]
             .spacing(4),
@@ -77,7 +78,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         container(
             text(error)
                 .font(theme::BODY_FONT)
-                .size(10)
+                .size(12)
                 .color(theme::DANGER),
         )
         .width(Fill)
@@ -88,7 +89,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         container(
             text(status)
                 .font(theme::BODY_BOLD)
-                .size(10)
+                .size(12)
                 .color(theme::SUCCESS),
         )
         .width(Fill)
@@ -132,14 +133,14 @@ fn catalog_provider_tabs(selected: CatalogProvider) -> Element<'static, Message>
     let mut tabs = row![
         text("DOWNLOAD SOURCE")
             .font(theme::BODY_BOLD)
-            .size(9)
+            .size(11)
             .color(theme::MUTED)
     ]
     .spacing(7)
     .align_y(Alignment::Center);
     for provider in CatalogProvider::ALL {
         tabs = tabs.push(
-            button(text(provider.label().to_uppercase()).size(11))
+            button(text(provider.label().to_uppercase()).size(13))
                 .on_press(Message::ResourceProviderPicked(provider))
                 .padding([8, 12])
                 .style(if selected == provider {
@@ -195,16 +196,22 @@ fn project_search<'a>(
                         media::thumbnail(app.catalog_thumbnail(project), "◇"),
                         column![
                             row![
-                                text(&project.name).size(17),
+                                text(&project.name)
+                                    .size(17)
+                                    .width(Fill)
+                                    .wrapping(Wrapping::WordOrGlyph),
                                 text(if restricted { "RESTRICTED" } else { "" })
                                     .font(theme::BODY_BOLD)
-                                    .size(8)
+                                    .size(10)
                                     .color(theme::DANGER)
                             ]
-                            .spacing(8),
+                            .spacing(8)
+                            .width(Fill),
                             text(&project.summary)
                                 .font(theme::BODY_FONT)
-                                .size(9)
+                                .size(11)
+                                .width(Fill)
+                                .wrapping(Wrapping::WordOrGlyph)
                                 .color(theme::MUTED),
                             text(format!(
                                 "{} downloads // {} // {}",
@@ -213,14 +220,18 @@ fn project_search<'a>(
                                 short_date(&project.date_modified)
                             ))
                             .font(theme::BODY_FONT)
-                            .size(9)
+                            .size(11)
+                            .width(Fill)
+                            .wrapping(Wrapping::WordOrGlyph)
                             .color(theme::LAVENDER_SOFT)
                         ]
-                        .spacing(3),
-                        Space::new().width(Fill),
+                        .spacing(3)
+                        .width(Fill),
                         text("FILES  >")
                             .font(theme::BODY_BOLD)
-                            .size(10)
+                            .size(12)
+                            .width(Length::Fixed(82.0))
+                            .align_x(alignment::Horizontal::Right)
                             .color(theme::LAVENDER)
                     ]
                     .spacing(10)
@@ -239,7 +250,7 @@ fn project_search<'a>(
                         text("NO MATCHING PROJECTS").size(19),
                         text("Try a shorter name or a different Minecraft instance.")
                             .font(theme::BODY_FONT)
-                            .size(10)
+                            .size(12)
                             .color(theme::MUTED)
                     ]
                     .spacing(5),
@@ -255,7 +266,7 @@ fn project_search<'a>(
         controls,
         text(format!("{} PROJECTS", browser.projects.len()))
             .font(theme::BODY_BOLD)
-            .size(9)
+            .size(11)
             .color(theme::MUTED),
         scrollable(projects)
             .width(Fill)
@@ -280,17 +291,24 @@ fn project_files<'a>(
             .style(theme::ghost_button),
         media::thumbnail(app.catalog_thumbnail(project), "◇"),
         column![
-            text(&project.name).size(21),
+            text(&project.name)
+                .size(21)
+                .width(Fill)
+                .wrapping(Wrapping::WordOrGlyph),
             text(&project.summary)
                 .font(theme::BODY_FONT)
-                .size(9)
+                .size(11)
+                .width(Fill)
+                .wrapping(Wrapping::WordOrGlyph)
                 .color(theme::MUTED)
         ]
-        .spacing(2),
-        Space::new().width(Fill),
+        .spacing(2)
+        .width(Fill),
         text(format!("{} FILES", browser.files.len()))
             .font(theme::BODY_BOLD)
-            .size(10)
+            .size(12)
+            .width(Length::Fixed(92.0))
+            .align_x(alignment::Horizontal::Right)
             .color(theme::LAVENDER)
     ]
     .spacing(12)
@@ -317,13 +335,17 @@ fn project_files<'a>(
                     row![
                         column![
                             row![
-                                text(&file.display_name).size(16),
+                                text(&file.display_name)
+                                    .size(16)
+                                    .width(Fill)
+                                    .wrapping(Wrapping::WordOrGlyph),
                                 text(release_label(file.release_type))
                                     .font(theme::BODY_BOLD)
-                                    .size(8)
+                                    .size(10)
                                     .color(release_color(file.release_type))
                             ]
-                            .spacing(8),
+                            .spacing(8)
+                            .width(Fill),
                             text(format!(
                                 "{} // {} // {}",
                                 short_date(&file.file_date),
@@ -336,16 +358,19 @@ fn project_files<'a>(
                                     .join(" · ")
                             ))
                             .font(theme::BODY_FONT)
-                            .size(9)
+                            .size(11)
+                            .width(Fill)
+                            .wrapping(Wrapping::WordOrGlyph)
                             .color(theme::MUTED)
                         ]
-                        .spacing(3),
-                        Space::new().width(Fill),
+                        .spacing(3)
+                        .width(Fill),
                         button(text(if restricted { "BLOCKED" } else { "DOWNLOAD" }).size(12))
                             .on_press_maybe(
                                 available.then_some(Message::ResourceFilePicked(file.clone()))
                             )
                             .padding([9, 13])
+                            .width(Length::Fixed(116.0))
                             .style(theme::primary_button)
                     ]
                     .spacing(10)
