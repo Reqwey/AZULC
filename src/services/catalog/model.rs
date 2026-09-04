@@ -1,4 +1,4 @@
-//! Provider-neutral models consumed by the application and UI layers.
+//! Provider-neutral values returned by CurseForge and Modrinth catalogs.
 
 use crate::services::providers::{
     curseforge::{File as CurseForgeFile, Project as CurseForgeProject, ResourceClass},
@@ -55,7 +55,7 @@ pub(crate) struct CatalogProject {
 }
 
 impl CatalogProject {
-    pub(crate) fn from_curseforge(project: CurseForgeProject) -> Self {
+    pub(super) fn from_curseforge(project: CurseForgeProject) -> Self {
         let available = curseforge_project_available(
             project.is_available,
             project.resource_class(),
@@ -86,7 +86,7 @@ impl CatalogProject {
         }
     }
 
-    pub(crate) fn from_modrinth(project: ModrinthProject) -> Self {
+    pub(super) fn from_modrinth(project: ModrinthProject) -> Self {
         Self {
             key: CatalogProjectKey::Modrinth(project.id),
             name: project.title,
@@ -128,6 +128,26 @@ impl CatalogReleaseKey {
             Self::Modrinth { .. } => CatalogProvider::Modrinth,
         }
     }
+
+    pub(crate) fn belongs_to(&self, project: &CatalogProjectKey) -> bool {
+        match (project, self) {
+            (
+                CatalogProjectKey::CurseForge(project_id),
+                Self::CurseForge {
+                    project_id: release_project_id,
+                    ..
+                },
+            ) => project_id == release_project_id,
+            (
+                CatalogProjectKey::Modrinth(project_id),
+                Self::Modrinth {
+                    project_id: release_project_id,
+                    ..
+                },
+            ) => project_id == release_project_id,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +164,11 @@ pub(crate) struct CatalogRelease {
 }
 
 impl CatalogRelease {
-    pub(crate) fn from_curseforge(file: CurseForgeFile) -> Self {
+    pub(crate) fn belongs_to(&self, project: &CatalogProject) -> bool {
+        self.key.provider() == project.key.provider() && self.key.belongs_to(&project.key)
+    }
+
+    pub(super) fn from_curseforge(file: CurseForgeFile) -> Self {
         Self {
             key: CatalogReleaseKey::CurseForge {
                 project_id: file.mod_id,
@@ -161,7 +185,7 @@ impl CatalogRelease {
         }
     }
 
-    pub(crate) fn from_modrinth(version: ModrinthVersion) -> Result<Self, String> {
+    pub(super) fn from_modrinth(version: ModrinthVersion) -> Result<Self, String> {
         let install = version.install_plan().map_err(|error| error.to_string())?;
         let release_type = match version.version_type {
             ModrinthVersionType::Release => 1,
@@ -191,7 +215,7 @@ impl CatalogRelease {
         })
     }
 
-    pub(crate) fn from_modrinth_versions(versions: Vec<ModrinthVersion>) -> Vec<Self> {
+    pub(super) fn from_modrinth_versions(versions: Vec<ModrinthVersion>) -> Vec<Self> {
         versions
             .into_iter()
             .filter_map(|version| Self::from_modrinth(version).ok())
@@ -229,6 +253,18 @@ mod tests {
             .provider(),
             CatalogProvider::CurseForge
         );
+    }
+
+    #[test]
+    fn releases_belong_only_to_their_declared_project() {
+        let release = CatalogReleaseKey::Modrinth {
+            project_id: "expected".into(),
+            version_id: "version".into(),
+        };
+
+        assert!(release.belongs_to(&CatalogProjectKey::Modrinth("expected".into())));
+        assert!(!release.belongs_to(&CatalogProjectKey::Modrinth("other".into())));
+        assert!(!release.belongs_to(&CatalogProjectKey::CurseForge(1)));
     }
 
     #[test]

@@ -1,10 +1,9 @@
 use crate::{
-    app::{
-        Launcher, Message, ModpackBrowserState,
-        catalog::{CatalogProject, CatalogProvider},
-        navigation::ModpackTab,
+    app::{Launcher, Message, ModpackBrowserState, navigation::ModpackTab},
+    services::{
+        catalog::{self, CatalogProject, CatalogProvider},
+        modpack::ModpackFormat,
     },
-    services::{modpack::ModpackFormat, providers::curseforge},
     theme,
 };
 use iced::widget::text::Wrapping;
@@ -61,8 +60,8 @@ fn section_tabs(app: &Launcher) -> Element<'_, Message> {
 
 fn browse(app: &Launcher) -> Element<'_, Message> {
     let provider_tabs = catalog_provider_tabs(app.modpacks.provider);
-    let credential: Element<'_, Message> = if app.modpacks.provider == CatalogProvider::CurseForge
-        && std::env::var_os(curseforge::API_KEY_ENV).is_none()
+    let credential: Element<'_, Message> = if let Some(credential) =
+        catalog::missing_credential(app.modpacks.provider)
     {
         container(
                 row![
@@ -74,7 +73,7 @@ fn browse(app: &Launcher) -> Element<'_, Message> {
                             .color(theme::WARNING),
                         text(format!(
                             "Set {} before starting AZULC. Credentials are never stored in launcher data.",
-                            curseforge::API_KEY_ENV
+                            credential
                         ))
                         .font(theme::BODY_FONT)
                         .size(11)

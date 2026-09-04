@@ -188,3 +188,39 @@ impl VersionFilter {
         Self::for_version(version) == self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::VersionFilter;
+    use crate::{domain::InstanceColor, services::minecraft};
+
+    fn version(kind: &str, release_time: &str) -> minecraft::VersionEntry {
+        minecraft::VersionEntry {
+            id: "test".into(),
+            kind: kind.into(),
+            release_time: release_time.into(),
+            url: "https://example.invalid/version.json".into(),
+            sha1: String::new(),
+        }
+    }
+
+    #[test]
+    fn version_channels_have_stable_instance_colors() {
+        assert_eq!(
+            VersionFilter::for_version(&version("release", "2026-09-04T00:00:00Z")).color(),
+            InstanceColor::Lavender
+        );
+        assert_eq!(
+            VersionFilter::for_version(&version("snapshot", "2026-09-04T00:00:00Z")).color(),
+            InstanceColor::Sky
+        );
+        assert_eq!(
+            VersionFilter::for_version(&version("old_beta", "2011-01-01T00:00:00Z")).color(),
+            InstanceColor::Amber
+        );
+        assert_eq!(
+            VersionFilter::for_version(&version("snapshot", "2026-04-01T00:00:00Z")).color(),
+            InstanceColor::Rose
+        );
+    }
+}

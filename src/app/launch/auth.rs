@@ -1,6 +1,11 @@
 //! Microsoft verification for the account attached to a pending game launch.
 
-use crate::domain::{AccountProvider, Instance, OfflineAccount};
+use crate::{
+    app::{Launcher, Message},
+    domain::{AccountProvider, Instance, OfflineAccount},
+    services::auth::microsoft,
+};
+use iced::Task;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -134,7 +139,99 @@ impl LaunchAuthentication {
     }
 }
 
-pub(crate) fn validate_refreshed_account(
+impl Launcher {
+    pub(in crate::app) fn retry_launch_authentication(&mut self) -> Task<Message> {
+        let Some(check) = self.launch_auth.retry() else {
+            return Task::none();
+        };
+        let Some(account) = self
+            .persisted
+            .accounts
+            .iter()
+            .find(|account| {
+                account.uuid == check.account_id && account.provider == AccountProvider::Microsoft
+            })
+            .cloned()
+        else {
+            self.launch_auth.fail(
+                check,
+                "The Microsoft account selected for this launch no longer exists.".into(),
+            );
+            return Task::none();
+        };
+        Self::check_microsoft_account_for_launch(check, account)
+    }
+
+    pub(super) fn check_microsoft_account_for_launch(
+        check: LaunchAuthCheck,
+        account: OfflineAccount,
+    ) -> Task<Message> {
+        Task::perform(
+            async move { microsoft::refresh_account(&account).await },
+            move |result| Message::LaunchMicrosoftAccountChecked(check, result),
+        )
+    }
+
+    pub(in crate::app) fn finish_launch_authentication(
+        &mut self,
+        check: LaunchAuthCheck,
+        result: Result<OfflineAccount, microsoft::AccountRefreshError>,
+    ) {
+        if !self.launch_auth.is_checking(check) {
+            return;
+        }
+        let refreshed = match result {
+            Ok(account) => match validate_refreshed_account(check.account_id, account) {
+                Ok(account) => account,
+                Err(message) => {
+                    self.launch_auth.fail(check, message);
+                    return;
+                }
+            },
+            Err(error) => {
+                let (mut message, replacement_refresh_token) = error.into_parts();
+                if let Some(refresh_token) = replacement_refresh_token
+                    && apply_replacement_refresh_token(
+                        &mut self.persisted.accounts,
+                        check.account_id,
+                        refresh_token,
+                    )
+                {
+                    self.persisted.account = self.persisted.active_account().cloned();
+                    if let Err(error) = self.paths.save(&self.persisted) {
+                        message.push_str(&format!(
+                            " The rotated refresh token could not be saved: {error}"
+                        ));
+                    }
+                }
+                self.launch_auth.fail(check, message);
+                return;
+            }
+        };
+        let launch_account = refreshed.clone();
+        if !apply_refreshed_account(&mut self.persisted.accounts, refreshed) {
+            self.launch_auth.fail(
+                check,
+                "The saved Microsoft profile no longer exists.".into(),
+            );
+            return;
+        }
+        self.persisted.account = self.persisted.active_account().cloned();
+        if let Err(error) = self.paths.save(&self.persisted) {
+            self.launch_auth.fail(
+                check,
+                format!("Could not save refreshed Microsoft credentials: {error}"),
+            );
+            return;
+        }
+        let Some(instance) = self.launch_auth.complete(check) else {
+            return;
+        };
+        self.start_instance_launch(instance, launch_account);
+    }
+}
+
+fn validate_refreshed_account(
     account_id: Uuid,
     account: OfflineAccount,
 ) -> Result<OfflineAccount, String> {
@@ -145,10 +242,7 @@ pub(crate) fn validate_refreshed_account(
     }
 }
 
-pub(crate) fn apply_refreshed_account(
-    accounts: &mut [OfflineAccount],
-    refreshed: OfflineAccount,
-) -> bool {
+fn apply_refreshed_account(accounts: &mut [OfflineAccount], refreshed: OfflineAccount) -> bool {
     let Some(stored) = accounts.iter_mut().find(|account| {
         account.provider == AccountProvider::Microsoft && account.uuid == refreshed.uuid
     }) else {
@@ -158,7 +252,7 @@ pub(crate) fn apply_refreshed_account(
     true
 }
 
-pub(crate) fn apply_replacement_refresh_token(
+fn apply_replacement_refresh_token(
     accounts: &mut [OfflineAccount],
     account_id: Uuid,
     refresh_token: String,

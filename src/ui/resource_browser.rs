@@ -1,9 +1,9 @@
 use crate::{
-    app::{
-        Launcher, Message, ResourceBrowserState,
-        catalog::{CatalogProject, CatalogProvider},
+    app::{Launcher, Message, ResourceBrowserState},
+    services::{
+        catalog::{self, CatalogProject, CatalogProvider},
+        content::ContentKind,
     },
-    services::{content::ContentKind, providers::curseforge},
     theme,
 };
 use iced::widget::text::Wrapping;
@@ -41,8 +41,8 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
     .align_y(Alignment::Center);
 
     let provider_tabs = catalog_provider_tabs(browser.provider);
-    let credential: Element<'_, Message> = if browser.provider == CatalogProvider::CurseForge
-        && std::env::var_os(curseforge::API_KEY_ENV).is_none()
+    let credential: Element<'_, Message> = if let Some(credential) =
+        catalog::missing_credential(browser.provider)
     {
         container(
             column![
@@ -52,7 +52,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                     .color(theme::WARNING),
                 text(format!(
                     "Set {} before starting AZULC. The key is never written to launcher data or logs.",
-                    curseforge::API_KEY_ENV
+                    credential
                 ))
                 .font(theme::BODY_FONT)
                 .size(11)

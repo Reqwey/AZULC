@@ -40,34 +40,6 @@ impl LoaderCatalog {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct LoaderCatalogState {
-    pub request_id: u64,
-    pub key: Option<LoaderCatalogKey>,
-    pub entries: Vec<LoaderVersionEntry>,
-    pub provider: Option<&'static str>,
-    pub loading: bool,
-    pub error: Option<String>,
-}
-
-impl LoaderCatalogState {
-    pub fn begin(&mut self, key: LoaderCatalogKey) -> u64 {
-        self.request_id = self.request_id.wrapping_add(1);
-        self.key = Some(key);
-        self.entries.clear();
-        self.provider = None;
-        self.loading = true;
-        self.error = None;
-        self.request_id
-    }
-
-    pub fn clear(&mut self) {
-        let request_id = self.request_id.wrapping_add(1);
-        *self = Self::default();
-        self.request_id = request_id;
-    }
-}
-
 pub async fn fetch(key: LoaderCatalogKey) -> Result<LoaderCatalog, String> {
     if key.loader == LoaderKind::Vanilla {
         return Ok(LoaderCatalog {
@@ -583,20 +555,5 @@ mod tests {
         let preview = parse_neoforge_official(body, "26.1-pre-1").expect("valid preview fixture");
         assert_eq!(preview.len(), 1);
         assert_eq!(preview[0].version, "26.1.0.9+pre-1");
-    }
-
-    #[test]
-    fn catalog_state_invalidates_same_key_requests_and_clears() {
-        let key = LoaderCatalogKey {
-            minecraft_version: "1.21.1".into(),
-            loader: LoaderKind::Fabric,
-            source: DownloadSource::Bmcl,
-        };
-        let mut state = LoaderCatalogState::default();
-        let first = state.begin(key.clone());
-        let retry = state.begin(key);
-        assert_ne!(first, retry);
-        state.clear();
-        assert_ne!(state.request_id, retry);
     }
 }

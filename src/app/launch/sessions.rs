@@ -14,8 +14,8 @@ pub(crate) struct LaunchAttempt {
 }
 
 #[derive(Debug, Clone, Hash)]
-pub(super) struct LaunchKey {
-    pub(super) attempt: LaunchAttempt,
+pub(in crate::app) struct LaunchKey {
+    pub(in crate::app) attempt: LaunchAttempt,
     pub(super) instance: Instance,
     pub(super) account: OfflineAccount,
     pub(super) paths: Paths,
@@ -60,7 +60,7 @@ impl LaunchSession {
 }
 
 #[derive(Default)]
-pub(super) struct LaunchRegistry {
+pub(in crate::app) struct LaunchRegistry {
     requests: HashMap<Uuid, LaunchKey>,
     reserved_instances: HashMap<Uuid, Instance>,
     sessions: HashMap<Uuid, LaunchSession>,
@@ -139,7 +139,7 @@ impl LaunchRegistry {
         true
     }
 
-    pub(super) fn requests(&self) -> impl Iterator<Item = &LaunchKey> {
+    pub(in crate::app) fn requests(&self) -> impl Iterator<Item = &LaunchKey> {
         self.requests.values()
     }
 
@@ -149,11 +149,11 @@ impl LaunchRegistry {
             .filter(|session| session.active && session.attempt_id == attempt.id)
     }
 
-    pub(super) fn session(&self, instance_id: Uuid) -> Option<&LaunchSession> {
+    pub(in crate::app) fn session(&self, instance_id: Uuid) -> Option<&LaunchSession> {
         self.sessions.get(&instance_id)
     }
 
-    pub(super) fn is_active(&self, instance_id: Uuid) -> bool {
+    pub(in crate::app) fn is_active(&self, instance_id: Uuid) -> bool {
         self.sessions
             .get(&instance_id)
             .is_some_and(|session| session.active)
@@ -170,7 +170,7 @@ impl LaunchRegistry {
         }
     }
 
-    pub(super) fn remove_instance(&mut self, instance_id: Uuid) {
+    pub(in crate::app) fn remove_instance(&mut self, instance_id: Uuid) {
         self.requests.remove(&instance_id);
         self.reserved_instances.remove(&instance_id);
         self.sessions.remove(&instance_id);

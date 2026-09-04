@@ -1,4 +1,4 @@
 //! External content catalog providers.
 
-pub mod curseforge;
-pub mod modrinth;
+pub(in crate::services) mod curseforge;
+pub(in crate::services) mod modrinth;

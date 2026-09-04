@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod catalog;
 pub mod content;
 pub mod download;
 pub mod insights;
@@ -9,7 +10,7 @@ pub mod loader_catalog;
 pub mod minecraft;
 pub mod modpack;
 pub(crate) mod path_safety;
-pub mod providers;
+mod providers;
 pub mod shell;
 pub mod system_resources;
 pub mod thumbnail;
