@@ -1,3 +1,4 @@
 /target/
 .env
 !.env.example
+/tools/render-readme-header.ps1

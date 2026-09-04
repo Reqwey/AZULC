@@ -27,24 +27,14 @@ Rust 1.88 or newer is required.
 cargo run
 ```
 
-CurseForge browsing uses a local API key. Copy `.env.example` to `.env`, then add
-the service credentials once:
+Copy `.env.example` to `.env` and configure the required credentials:
 
 ```dotenv
 AZULC_CURSEFORGE_API_KEY='<your approved key>'
 AZULC_MICROSOFT_CLIENT_ID='<Azusa Minecraft Launcher application client ID>'
 ```
 
-Microsoft sign-in uses the public-client device-code flow and never requires a
-client secret. The client ID must belong to Azusa Minecraft Launcher and must be authorized for
-Xbox Live/Minecraft Services; copying another launcher's client ID is not
-supported and can still produce `403 Invalid app registration` even when the
-OAuth, Xbox Live, and XSTS steps succeed.
-
-AZULC loads `.env` automatically on startup. A process-level environment variable
-with the same name takes precedence. The ignored `.env` file is local-only; AZULC
-never copies the key to `state.json`, downloaded metadata, or logs. CurseForge-style
-`$` characters and `/` are read literally and do not need escaping.
+AZULC loads `.env` automatically. Process-level environment variables take precedence.
 
 Build an optimized binary:
 
@@ -93,14 +83,6 @@ resolve Minecraft metadata
 ```
 
 Every transition emits a `PipelineEvent` into the same root subscription. Cancelling drops that future; Forge-family child processes use `kill_on_drop`. Retrying rebuilds the plan and reuses files that already pass verification.
-
-## Deliberate limits
-
-- Offline profiles are retained only for launch testing and are intended to be removed before production distribution.
-- Third-party/authlib-injector authentication is intentionally unsupported.
-- Compatible loader builds are selected from the catalog, which defaults to the newest stable build.
-- AZULC detects installed Java runtimes but does not download a JRE.
-- CurseForge browsing requires `AZULC_CURSEFORGE_API_KEY`; Modrinth does not require a key.
 
 ## Acknowledgements
 

@@ -68,7 +68,7 @@ try {
         314
     )
     $graphics.DrawString(
-        'NEXT-GENERATION  /  LIGHTWEIGHT  /  ALL-RUST',
+        'HIGH PERFORMANCE  /  LIGHTWEIGHT  /  CONCURRENCY SAFETY',
         $detailFont,
         (New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 184, 156, 255))),
         120,
