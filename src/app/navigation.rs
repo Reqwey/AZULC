@@ -1,0 +1,190 @@
+//! Route, tab, and wizard state shared by the application and views.
+
+use crate::{
+    domain::InstanceColor,
+    services::{content::ContentKind, minecraft},
+};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum Route {
+    #[default]
+    Home,
+    Instances,
+    NewInstance,
+    Accounts,
+    Settings,
+}
+
+impl Route {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Home => "Home",
+            Self::Instances => "Instances",
+            Self::NewInstance => "New Instance",
+            Self::Accounts => "Accounts",
+            Self::Settings => "App Settings",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum NewInstanceTab {
+    #[default]
+    Minecraft,
+    Modpacks,
+}
+
+impl NewInstanceTab {
+    pub(crate) const ALL: [Self; 2] = [Self::Minecraft, Self::Modpacks];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Minecraft => "Minecraft",
+            Self::Modpacks => "Modpacks",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum ModpackTab {
+    #[default]
+    Browse,
+    Import,
+}
+
+impl ModpackTab {
+    pub(crate) const ALL: [Self; 2] = [Self::Browse, Self::Import];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Browse => "Browse Online",
+            Self::Import => "Import File",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum InstanceTab {
+    #[default]
+    Overview,
+    Worlds,
+    Mods,
+    ResourcePacks,
+    ShaderPacks,
+    DataPacks,
+    Screenshots,
+    Settings,
+}
+
+impl InstanceTab {
+    pub(crate) const ALL: [Self; 8] = [
+        Self::Overview,
+        Self::Worlds,
+        Self::Mods,
+        Self::ResourcePacks,
+        Self::ShaderPacks,
+        Self::DataPacks,
+        Self::Screenshots,
+        Self::Settings,
+    ];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "Overview",
+            Self::Worlds => "Worlds",
+            Self::Mods => "Mods",
+            Self::ResourcePacks => "Resource Packs",
+            Self::ShaderPacks => "Shaders",
+            Self::DataPacks => "Data Packs",
+            Self::Screenshots => "Screenshots",
+            Self::Settings => "Settings",
+        }
+    }
+
+    pub(crate) fn content_kind(self) -> Option<ContentKind> {
+        match self {
+            Self::Worlds => Some(ContentKind::Worlds),
+            Self::Mods => Some(ContentKind::Mods),
+            Self::ResourcePacks => Some(ContentKind::ResourcePacks),
+            Self::ShaderPacks => Some(ContentKind::ShaderPacks),
+            Self::DataPacks => Some(ContentKind::DataPacks),
+            Self::Screenshots => Some(ContentKind::Screenshots),
+            Self::Overview | Self::Settings => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum SettingsTab {
+    #[default]
+    Downloads,
+    Java,
+    About,
+}
+
+impl SettingsTab {
+    pub(crate) const ALL: [Self; 3] = [Self::Downloads, Self::Java, Self::About];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Downloads => "Downloads",
+            Self::Java => "Java",
+            Self::About => "About",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum WizardStep {
+    #[default]
+    Version,
+    Loader,
+    Details,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum VersionFilter {
+    #[default]
+    Release,
+    Snapshot,
+    Old,
+    AprilFools,
+}
+
+impl VersionFilter {
+    pub(crate) const ALL: [Self; 4] = [Self::Release, Self::Snapshot, Self::Old, Self::AprilFools];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Release => "Releases",
+            Self::Snapshot => "Snapshots",
+            Self::Old => "Legacy",
+            Self::AprilFools => "April Fools",
+        }
+    }
+
+    pub(crate) const fn color(self) -> InstanceColor {
+        match self {
+            Self::Release => InstanceColor::Lavender,
+            Self::Snapshot => InstanceColor::Sky,
+            Self::Old => InstanceColor::Amber,
+            Self::AprilFools => InstanceColor::Rose,
+        }
+    }
+
+    pub(crate) fn for_version(version: &minecraft::VersionEntry) -> Self {
+        if version.release_time.contains("04-01") {
+            Self::AprilFools
+        } else {
+            match version.kind.as_str() {
+                "release" => Self::Release,
+                "snapshot" => Self::Snapshot,
+                _ => Self::Old,
+            }
+        }
+    }
+
+    pub(crate) fn matches(self, version: &minecraft::VersionEntry) -> bool {
+        Self::for_version(version) == self
+    }
+}
