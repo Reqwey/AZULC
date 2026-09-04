@@ -6,7 +6,7 @@ use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::json;
 use std::{
-    env,
+    env, fmt,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -71,6 +71,56 @@ pub enum MicrosoftError {
     #[error("could not decode the active Minecraft skin: {0}")]
     Skin(#[from] image::ImageError),
 }
+
+#[derive(Clone)]
+pub struct AccountRefreshError {
+    message: String,
+    replacement_refresh_token: Option<String>,
+}
+
+impl AccountRefreshError {
+    fn before_token_rotation(source: MicrosoftError) -> Self {
+        Self {
+            message: source.to_string(),
+            replacement_refresh_token: None,
+        }
+    }
+
+    fn after_token_rotation(source: MicrosoftError, refresh_token: String) -> Self {
+        Self {
+            message: source.to_string(),
+            replacement_refresh_token: Some(refresh_token),
+        }
+    }
+
+    pub fn into_parts(self) -> (String, Option<String>) {
+        (self.message, self.replacement_refresh_token)
+    }
+}
+
+impl fmt::Debug for AccountRefreshError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AccountRefreshError")
+            .field("message", &self.message)
+            .field(
+                "replacement_refresh_token",
+                &self
+                    .replacement_refresh_token
+                    .as_ref()
+                    .map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+impl fmt::Display for AccountRefreshError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for AccountRefreshError {}
 
 #[derive(Debug, Deserialize)]
 struct OAuthTokens {
@@ -187,14 +237,17 @@ pub async fn complete_device_authorization(
     account_from_oauth(&client, oauth).await
 }
 
-pub async fn refresh_account(account: &OfflineAccount) -> Result<OfflineAccount, MicrosoftError> {
-    let client_id = client_id()?;
+pub async fn refresh_account(
+    account: &OfflineAccount,
+) -> Result<OfflineAccount, AccountRefreshError> {
+    let client_id = client_id().map_err(AccountRefreshError::before_token_rotation)?;
     let refresh_token = account
         .refresh_token
         .as_deref()
         .filter(|token| !token.is_empty())
-        .ok_or(MicrosoftError::Expired)?;
-    let client = http_client()?;
+        .ok_or(MicrosoftError::Expired)
+        .map_err(AccountRefreshError::before_token_rotation)?;
+    let client = http_client().map_err(AccountRefreshError::before_token_rotation)?;
     let response = client
         .post(TOKEN_ENDPOINT)
         .form(&[
@@ -204,12 +257,19 @@ pub async fn refresh_account(account: &OfflineAccount) -> Result<OfflineAccount,
             ("scope", SCOPE),
         ])
         .send()
-        .await?;
-    let mut oauth: OAuthTokens = decode_json(response).await?;
+        .await
+        .map_err(MicrosoftError::Network)
+        .map_err(AccountRefreshError::before_token_rotation)?;
+    let mut oauth: OAuthTokens = decode_json(response)
+        .await
+        .map_err(AccountRefreshError::before_token_rotation)?;
     if oauth.refresh_token.is_empty() {
         oauth.refresh_token = refresh_token.to_owned();
     }
-    account_from_oauth(&client, oauth).await
+    let replacement_refresh_token = oauth.refresh_token.clone();
+    account_from_oauth(&client, oauth).await.map_err(|source| {
+        AccountRefreshError::after_token_rotation(source, replacement_refresh_token)
+    })
 }
 
 async fn account_from_oauth(
@@ -350,6 +410,8 @@ fn client_id() -> Result<String, MicrosoftError> {
 fn http_client() -> Result<Client, MicrosoftError> {
     Ok(Client::builder()
         .user_agent(concat!("AZULC/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(45))
         .build()?)
 }
 
@@ -371,6 +433,18 @@ const fn default_minecraft_expiry() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_error_debug_output_redacts_a_rotated_token() {
+        let error = AccountRefreshError::after_token_rotation(
+            MicrosoftError::Expired,
+            "top-secret-token".into(),
+        );
+
+        let debug = format!("{error:?}");
+
+        assert!(!debug.contains("top-secret-token"));
+    }
 
     #[test]
     fn renders_face_and_hat_from_a_standard_skin() {

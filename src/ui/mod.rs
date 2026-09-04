@@ -10,7 +10,7 @@ pub(crate) mod settings;
 pub(crate) mod wizard;
 
 use crate::{
-    app::{Launcher, Message, navigation::Route},
+    app::{LaunchAuthState, Launcher, Message, navigation::Route},
     domain::{InstallStage, Instance},
     theme,
 };
@@ -99,8 +99,124 @@ impl Launcher {
             root
         };
 
-        resize_frame(content)
+        let framed = resize_frame(content);
+        if self.launch_auth.is_blocking() {
+            let blocked_workspace = framed.map(|_| Message::LaunchAuthenticationBackdropPressed);
+            let backdrop = mouse_area(
+                container(Space::new())
+                    .width(Fill)
+                    .height(Fill)
+                    .style(theme::modal_backdrop),
+            )
+            .on_press(Message::LaunchAuthenticationBackdropPressed)
+            .on_release(Message::LaunchAuthenticationBackdropPressed)
+            .on_right_press(Message::LaunchAuthenticationBackdropPressed)
+            .on_right_release(Message::LaunchAuthenticationBackdropPressed)
+            .on_middle_press(Message::LaunchAuthenticationBackdropPressed)
+            .on_middle_release(Message::LaunchAuthenticationBackdropPressed)
+            .on_scroll(|_| Message::LaunchAuthenticationBackdropPressed);
+
+            stack![
+                blocked_workspace,
+                backdrop,
+                launch_authentication_gate(self)
+            ]
+            .width(Fill)
+            .height(Fill)
+            .into()
+        } else {
+            framed
+        }
     }
+}
+
+fn launch_authentication_gate(app: &Launcher) -> Element<'_, Message> {
+    let content: Element<'_, Message> = match app.launch_auth.state() {
+        LaunchAuthState::Checking(launch) => {
+            column![
+                text("VERIFYING MICROSOFT ACCOUNT")
+                    .size(27)
+                    .color(theme::LAVENDER),
+                text(format!("PLAYER / {}", launch.username))
+                    .font(theme::BODY_BOLD)
+                    .size(13)
+                    .color(theme::TEXT),
+                text(format!("INSTANCE / {}", launch.instance.name))
+                    .font(theme::BODY_BOLD)
+                    .size(13)
+                    .color(theme::TEXT),
+                text("AZULC is refreshing this account before launching. Once verified, this account will not be checked again during the current app session.")
+                    .font(theme::BODY_FONT)
+                    .size(10)
+                    .color(theme::MUTED)
+            ]
+            .spacing(14)
+            .into()
+        }
+        LaunchAuthState::Failed { launch, message } => {
+            column![
+                text("MICROSOFT VERIFICATION FAILED")
+                    .size(27)
+                    .color(theme::DANGER),
+                text(format!("PLAYER / {}", launch.username))
+                    .font(theme::BODY_BOLD)
+                    .size(13)
+                    .color(theme::TEXT),
+                text(format!("INSTANCE / {}", launch.instance.name))
+                    .font(theme::BODY_BOLD)
+                    .size(13)
+                    .color(theme::TEXT),
+                container(
+                    scrollable(
+                        text(message)
+                            .font(theme::BODY_FONT)
+                            .size(10)
+                            .color(theme::DANGER)
+                    )
+                    .height(150)
+                    .style(theme::square_scrollable)
+                )
+                .width(Fill)
+                .padding(14)
+                .style(theme::danger_panel),
+                text("Check your connection and Microsoft application configuration, then retry this account check or cancel only this launch.")
+                    .font(theme::BODY_FONT)
+                    .size(10)
+                    .color(theme::MUTED),
+                row![
+                    Space::new().width(Fill),
+                    button(text("CANCEL LAUNCH").size(13))
+                        .on_press(Message::CancelLaunchAuthentication)
+                        .padding([10, 15])
+                        .style(theme::ghost_button),
+                    button(text("RETRY").size(13))
+                        .on_press(Message::RetryLaunchAuthentication)
+                        .padding([10, 15])
+                        .style(theme::primary_button)
+                ]
+                .spacing(9)
+                .align_y(Alignment::Center)
+            ]
+            .spacing(14)
+            .into()
+        }
+        LaunchAuthState::Idle => Space::new().into(),
+    };
+
+    let panel = opaque(
+        container(content)
+            .width(Fill)
+            .max_width(620)
+            .padding(24)
+            .style(theme::modal_panel),
+    );
+    container(panel)
+        .width(Fill)
+        .height(Fill)
+        .align_x(alignment::Horizontal::Center)
+        .align_y(alignment::Vertical::Center)
+        .padding(24)
+        .into()
 }
 
 fn delete_confirmation(app: &Launcher) -> Element<'_, Message> {
@@ -422,6 +538,7 @@ fn sidebar(app: &Launcher) -> Element<'_, Message> {
 
 fn instance_sidebar_button<'a>(app: &Launcher, instance: &'a Instance) -> Element<'a, Message> {
     let selected = app.route == Route::Instances && app.selected == Some(instance.id);
+    let launching = app.is_instance_launching(instance.id);
     button(
         row![
             container(media::instance_marker(instance.color, 19))
@@ -445,6 +562,14 @@ fn instance_sidebar_button<'a>(app: &Launcher, instance: &'a Instance) -> Elemen
             ]
             .spacing(1),
             Space::new().width(Fill),
+            text(if launching { "LIVE" } else { "" })
+                .font(theme::BODY_BOLD)
+                .size(8)
+                .color(if selected {
+                    theme::CANVAS
+                } else {
+                    theme::SUCCESS
+                }),
             text(if instance.favorite { "📌" } else { ">" }).size(14)
         ]
         .spacing(7)

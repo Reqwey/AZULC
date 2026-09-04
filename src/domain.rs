@@ -21,7 +21,7 @@ impl fmt::Display for AccountProvider {
     }
 }
 
-#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
+#[derive(Clone, Hash, Serialize, Deserialize)]
 pub struct OfflineAccount {
     pub username: String,
     pub uuid: Uuid,
@@ -38,6 +38,28 @@ pub struct OfflineAccount {
     /// Pre-rendered 64×64 RGBA player head, including the hat layer.
     #[serde(default)]
     pub avatar_rgba: Option<Vec<u8>>,
+}
+
+impl fmt::Debug for OfflineAccount {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OfflineAccount")
+            .field("username", &self.username)
+            .field("uuid", &self.uuid)
+            .field("provider", &self.provider)
+            .field(
+                "access_token",
+                &self.access_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("token_expires_at", &self.token_expires_at)
+            .field("xuid", &self.xuid.as_ref().map(|_| "<redacted>"))
+            .field("has_avatar", &self.avatar_rgba.is_some())
+            .finish()
+    }
 }
 
 impl OfflineAccount {
@@ -58,14 +80,6 @@ impl OfflineAccount {
             avatar_rgba: None,
         }
     }
-
-    pub fn token_needs_refresh(&self, now: u64) -> bool {
-        self.provider == AccountProvider::Microsoft
-            && (self.access_token.as_deref().is_none_or(str::is_empty)
-                || self
-                    .token_expires_at
-                    .is_none_or(|expires| expires <= now.saturating_add(60)))
-    }
 }
 
 #[cfg(test)]
@@ -78,6 +92,17 @@ mod tests {
             OfflineAccount::new("Steve").uuid.to_string(),
             "5627dd98-e6be-3c21-b8a8-e92344183641"
         );
+    }
+
+    #[test]
+    fn account_debug_output_redacts_credentials() {
+        let mut account = OfflineAccount::new("Player");
+        account.access_token = Some("secret-access-token".into());
+        account.refresh_token = Some("secret-refresh-token".into());
+
+        let debug = format!("{account:?}");
+
+        assert!(!debug.contains("secret-access-token") && !debug.contains("secret-refresh-token"));
     }
 }
 

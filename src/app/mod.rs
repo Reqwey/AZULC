@@ -1,11 +1,18 @@
 pub(crate) mod catalog;
+mod launch_auth;
+mod launches;
 pub(crate) mod navigation;
+
+pub(crate) use launch_auth::LaunchAuthState;
+pub(crate) use launches::LaunchSession;
 
 use self::{
     catalog::{
         CatalogProject, CatalogProjectKey, CatalogProvider, CatalogRelease, CatalogReleaseKey,
         thumbnail_urls as project_thumbnail_urls,
     },
+    launch_auth::{LaunchAuthCheck, LaunchAuthentication},
+    launches::{LaunchAttempt, LaunchConflict, LaunchKey, LaunchRegistry},
     navigation::{
         InstanceTab, ModpackTab, NewInstanceTab, Route, SettingsTab, VersionFilter, WizardStep,
     },
@@ -54,7 +61,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -151,27 +158,6 @@ struct PipelineKey {
     paths: Paths,
 }
 
-#[derive(Debug, Clone, Hash)]
-struct LaunchKey {
-    attempt: Uuid,
-    instance: Instance,
-    account: OfflineAccount,
-    paths: Paths,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct LaunchSession {
-    pub(crate) instance_id: Uuid,
-    pub(crate) status: String,
-    pub(crate) logs: Vec<String>,
-    pub(crate) log_path: Option<PathBuf>,
-    pub(crate) pid: Option<u32>,
-    pub(crate) ready: bool,
-    pub(crate) active: bool,
-    pub(crate) failed: bool,
-    ready_at: Option<Instant>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MicrosoftLoginState {
     pub(crate) active: bool,
@@ -201,6 +187,7 @@ pub struct Launcher {
     pub(crate) loader_catalog: LoaderCatalogState,
     pub(crate) java_runtimes: Vec<JavaRuntime>,
     pub(crate) insights: InstanceScanSummary,
+    insights_request_id: u64,
     pub(crate) highlights: VersionHighlights,
     pub(crate) pings: Vec<ServicePing>,
     pub(crate) system_resources: SystemResources,
@@ -215,9 +202,9 @@ pub struct Launcher {
     pub(crate) modpacks: ModpackBrowserState,
     pub(crate) jobs: HashMap<Uuid, InstallJob>,
     pub(crate) notice: Option<String>,
-    pub(crate) launching: bool,
-    launch_request: Option<LaunchKey>,
-    pub(crate) launch_session: Option<LaunchSession>,
+    pub(crate) launch_auth: LaunchAuthentication,
+    launches: LaunchRegistry,
+    deleting_instances: HashSet<Uuid>,
     window_id: Option<window::Id>,
     next_modal_id: u64,
 }
@@ -238,7 +225,13 @@ pub enum Message {
     CopyMicrosoftLoginCode,
     MicrosoftLoginFinished(u64, Result<OfflineAccount, String>),
     CancelMicrosoftLogin,
-    MicrosoftAccountRefreshedForLaunch(Uuid, Result<OfflineAccount, String>),
+    LaunchMicrosoftAccountChecked(
+        LaunchAuthCheck,
+        Result<OfflineAccount, microsoft::AccountRefreshError>,
+    ),
+    RetryLaunchAuthentication,
+    CancelLaunchAuthentication,
+    LaunchAuthenticationBackdropPressed,
     SelectAccount(Uuid),
     DeleteAccount(Uuid),
     WizardStepSelected(WizardStep),
@@ -261,7 +254,7 @@ pub enum Message {
     ),
     RetryLoaderCatalog,
     JavaLoaded(Vec<JavaRuntime>),
-    InsightsLoaded(InstanceScanSummary),
+    InsightsLoaded(u64, InstanceScanSummary),
     HighlightsLoaded(Result<VersionHighlights, String>),
     PingsLoaded(Vec<ServicePing>),
     ContentLoaded(Uuid, ContentKind, Result<Vec<ContentEntry>, String>),
@@ -337,7 +330,7 @@ pub enum Message {
     RetryInstall(Uuid),
     Pipeline(Uuid, Box<PipelineEvent>),
     LaunchSelected,
-    LaunchEvent(launcher::LaunchEvent),
+    LaunchEvent(LaunchAttempt, launcher::LaunchEvent),
     DismissNotice,
 }
 
@@ -371,6 +364,7 @@ impl Launcher {
             loader_catalog: LoaderCatalogState::default(),
             java_runtimes: Vec::new(),
             insights: InstanceScanSummary::default(),
+            insights_request_id: 0,
             highlights: VersionHighlights::default(),
             pings: Vec::new(),
             system_resources: SystemResources::default(),
@@ -385,13 +379,12 @@ impl Launcher {
             modpacks: ModpackBrowserState::default(),
             jobs: HashMap::new(),
             notice: None,
-            launching: false,
-            launch_request: None,
-            launch_session: None,
+            launch_auth: LaunchAuthentication::default(),
+            launches: LaunchRegistry::default(),
+            deleting_instances: HashSet::new(),
             window_id: None,
             next_modal_id: 0,
         };
-
         (
             app,
             Task::batch([
@@ -399,7 +392,7 @@ impl Launcher {
                 Task::perform(java::detect(), Message::JavaLoaded),
                 Task::perform(
                     async move { insights::scan_instances(&instances).await },
-                    Message::InsightsLoaded,
+                    |summary| Message::InsightsLoaded(0, summary),
                 ),
                 Task::perform(load_highlights(), Message::HighlightsLoaded),
                 Task::perform(load_pings(), Message::PingsLoaded),
@@ -435,10 +428,12 @@ impl Launcher {
                 .with(id)
                 .map(pipeline_message)
         }));
-        if let Some(key) = &self.launch_request {
-            subscriptions
-                .push(Subscription::run_with(key.clone(), launch_stream).map(Message::LaunchEvent));
-        }
+        subscriptions.extend(self.launches.requests().map(|key| {
+            let attempt = key.attempt.clone();
+            Subscription::run_with(key.clone(), launch_stream)
+                .with(attempt)
+                .map(launch_message)
+        }));
         Subscription::batch(subscriptions)
     }
 
@@ -549,22 +544,18 @@ impl Launcher {
                 self.microsoft_login.verification_url.clear();
                 self.microsoft_login.status = "Microsoft sign-in cancelled.".into();
             }
-            Message::MicrosoftAccountRefreshedForLaunch(id, result) => {
-                self.launching = false;
-                match result {
-                    Ok(account) => {
-                        if account.uuid != id {
-                            self.notice = Some("Microsoft returned a different profile.".into());
-                            return Task::none();
-                        }
-                        self.upsert_microsoft_account(account);
-                        return self.launch_selected();
-                    }
-                    Err(error) => {
-                        self.notice = Some(format!("Microsoft sign-in expired: {error}"));
-                    }
+            Message::LaunchMicrosoftAccountChecked(check, result) => {
+                self.finish_launch_authentication(check, result);
+            }
+            Message::RetryLaunchAuthentication => {
+                return self.retry_launch_authentication();
+            }
+            Message::CancelLaunchAuthentication => {
+                if self.launch_auth.cancel_failed_launch() {
+                    self.notice = Some("Minecraft launch cancelled.".into());
                 }
             }
+            Message::LaunchAuthenticationBackdropPressed => {}
             Message::SelectAccount(id) => {
                 if self
                     .persisted
@@ -579,6 +570,7 @@ impl Launcher {
             }
             Message::DeleteAccount(id) => {
                 self.persisted.accounts.retain(|account| account.uuid != id);
+                self.launch_auth.invalidate(id);
                 if self.persisted.selected_account == Some(id) {
                     self.persisted.selected_account =
                         self.persisted.accounts.first().map(|account| account.uuid);
@@ -712,7 +704,11 @@ impl Launcher {
             }
             Message::RetryLoaderCatalog => return self.refresh_loader_catalog(true),
             Message::JavaLoaded(runtimes) => self.java_runtimes = runtimes,
-            Message::InsightsLoaded(summary) => self.insights = summary,
+            Message::InsightsLoaded(request_id, summary) => {
+                if request_id == self.insights_request_id {
+                    self.insights = summary;
+                }
+            }
             Message::HighlightsLoaded(result) => match result {
                 Ok(highlights) => self.highlights = highlights,
                 Err(error) => self.notice = Some(error),
@@ -1092,7 +1088,19 @@ impl Launcher {
                 }
             }
             Message::DeleteInstance(id) => {
-                if self
+                if self.is_instance_launching(id) {
+                    let name = self
+                        .persisted
+                        .instances
+                        .iter()
+                        .find(|instance| instance.id == id)
+                        .map_or("This instance", |instance| instance.name.as_str());
+                    self.notice = Some(format!(
+                        "{name} is still running. Exit Minecraft before deleting its files."
+                    ));
+                } else if self.deleting_instances.contains(&id) {
+                    self.notice = Some("This instance is already being deleted.".into());
+                } else if self
                     .persisted
                     .instances
                     .iter()
@@ -1104,24 +1112,36 @@ impl Launcher {
             Message::CancelDeleteInstance => self.pending_delete = None,
             Message::ConfirmDeleteInstance => {
                 if let Some(id) = self.pending_delete.take() {
-                    return self.delete_instance(id);
+                    if self.is_instance_launching(id) {
+                        self.notice = Some(
+                            "This instance is still running. Exit Minecraft before deleting its files."
+                                .into(),
+                        );
+                    } else {
+                        self.deleting_instances.insert(id);
+                        return self.delete_instance(id);
+                    }
                 }
             }
-            Message::Deleted(id, result) => match result {
-                Ok(()) => {
-                    self.persisted
-                        .instances
-                        .retain(|instance| instance.id != id);
-                    self.jobs.remove(&id);
-                    if self.selected == Some(id) {
-                        self.selected =
-                            self.persisted.instances.first().map(|instance| instance.id);
+            Message::Deleted(id, result) => {
+                self.deleting_instances.remove(&id);
+                match result {
+                    Ok(()) => {
+                        self.persisted
+                            .instances
+                            .retain(|instance| instance.id != id);
+                        self.jobs.remove(&id);
+                        self.launches.remove_instance(id);
+                        if self.selected == Some(id) {
+                            self.selected =
+                                self.persisted.instances.first().map(|instance| instance.id);
+                        }
+                        self.save();
+                        return self.refresh_insights();
                     }
-                    self.save();
-                    return self.refresh_insights();
+                    Err(error) => self.notice = Some(format!("Could not delete instance: {error}")),
                 }
-                Err(error) => self.notice = Some(format!("Could not delete instance: {error}")),
-            },
+            }
             Message::SettingsTabSelected(tab) => self.settings_tab = tab,
             Message::NewInstanceTabSelected(tab) => {
                 self.new_instance_tab = tab;
@@ -1172,7 +1192,9 @@ impl Launcher {
             Message::RetryInstall(id) => self.retry_install(id),
             Message::Pipeline(id, event) => return self.handle_pipeline(id, *event),
             Message::LaunchSelected => return self.launch_selected(),
-            Message::LaunchEvent(event) => return self.handle_launch_event(event),
+            Message::LaunchEvent(attempt, event) => {
+                return self.handle_launch_event(&attempt, event);
+            }
             Message::DismissNotice => self.notice = None,
         }
         Task::none()
@@ -1193,7 +1215,8 @@ impl Launcher {
             self.notice = Some(format!("{username} is already in your account list."));
         } else {
             let account = OfflineAccount::new(&username);
-            self.persisted.selected_account = Some(account.uuid);
+            let account_id = account.uuid;
+            self.persisted.selected_account = Some(account_id);
             self.persisted.accounts.push(account.clone());
             self.persisted.account = Some(account);
             self.account_input.clear();
@@ -1224,13 +1247,106 @@ impl Launcher {
     }
 
     fn upsert_microsoft_account(&mut self, account: OfflineAccount) {
+        let account_id = account.uuid;
+        self.launch_auth.invalidate(account_id);
         self.persisted
             .accounts
-            .retain(|existing| existing.uuid != account.uuid);
+            .retain(|existing| existing.uuid != account_id);
         self.persisted.accounts.push(account.clone());
-        self.persisted.selected_account = Some(account.uuid);
+        self.persisted.selected_account = Some(account_id);
         self.persisted.account = Some(account);
         self.save();
+    }
+
+    fn retry_launch_authentication(&mut self) -> Task<Message> {
+        let Some(check) = self.launch_auth.retry() else {
+            return Task::none();
+        };
+        let Some(account) = self
+            .persisted
+            .accounts
+            .iter()
+            .find(|account| {
+                account.uuid == check.account_id && account.provider == AccountProvider::Microsoft
+            })
+            .cloned()
+        else {
+            self.launch_auth.fail(
+                check,
+                "The Microsoft account selected for this launch no longer exists.".into(),
+            );
+            return Task::none();
+        };
+        Self::check_microsoft_account_for_launch(check, account)
+    }
+
+    fn check_microsoft_account_for_launch(
+        check: LaunchAuthCheck,
+        account: OfflineAccount,
+    ) -> Task<Message> {
+        Task::perform(
+            async move { microsoft::refresh_account(&account).await },
+            move |result| Message::LaunchMicrosoftAccountChecked(check, result),
+        )
+    }
+
+    fn finish_launch_authentication(
+        &mut self,
+        check: LaunchAuthCheck,
+        result: Result<OfflineAccount, microsoft::AccountRefreshError>,
+    ) {
+        if !self.launch_auth.is_checking(check) {
+            return;
+        }
+        let refreshed = match result {
+            Ok(account) => match launch_auth::validate_refreshed_account(check.account_id, account)
+            {
+                Ok(account) => account,
+                Err(message) => {
+                    self.launch_auth.fail(check, message);
+                    return;
+                }
+            },
+            Err(error) => {
+                let (mut message, replacement_refresh_token) = error.into_parts();
+                if let Some(refresh_token) = replacement_refresh_token
+                    && launch_auth::apply_replacement_refresh_token(
+                        &mut self.persisted.accounts,
+                        check.account_id,
+                        refresh_token,
+                    )
+                {
+                    self.persisted.account = self.persisted.active_account().cloned();
+                    if let Err(error) = self.paths.save(&self.persisted) {
+                        message.push_str(&format!(
+                            " The rotated refresh token could not be saved: {error}"
+                        ));
+                    }
+                }
+                self.launch_auth.fail(check, message);
+                return;
+            }
+        };
+        let launch_account = refreshed.clone();
+        if !launch_auth::apply_refreshed_account(&mut self.persisted.accounts, refreshed) {
+            self.launch_auth.fail(
+                check,
+                "The saved Microsoft profile no longer exists.".into(),
+            );
+            return;
+        }
+        self.persisted.account = self.persisted.active_account().cloned();
+        if let Err(error) = self.paths.save(&self.persisted) {
+            self.launch_auth.fail(
+                check,
+                format!("Could not save refreshed Microsoft credentials: {error}"),
+            );
+            return;
+        }
+        let Some(instance) = self.launch_auth.complete(check) else {
+            return;
+        };
+        self.start_instance_launch(instance, launch_account);
     }
 
     fn edit_instance(&mut self, edit: impl FnOnce(&mut Instance)) {
@@ -1322,55 +1438,115 @@ impl Launcher {
     }
 
     fn launch_selected(&mut self) -> Task<Message> {
+        if self.launch_auth.is_blocking() {
+            return Task::none();
+        }
+        let Some(instance) = self.selected_instance().cloned() else {
+            self.notice = Some("Choose an instance to launch first.".into());
+            return Task::none();
+        };
+        if self.deleting_instances.contains(&instance.id) {
+            self.notice = Some(format!("{} is currently being deleted.", instance.name));
+            return Task::none();
+        }
         let Some(account) = self.persisted.active_account().cloned() else {
             self.notice = Some("Sign in or select a player profile first.".into());
             return Task::none();
         };
-        if self.launching {
-            self.notice = Some("A Minecraft process is already active.".into());
-        } else if account.provider == AccountProvider::Microsoft && !microsoft::is_configured() {
-            self.notice = Some(format!(
-                "Microsoft launch requires {} in .env.",
-                microsoft::CLIENT_ID_ENV
-            ));
-        } else if account.token_needs_refresh(now_unix().unwrap_or_default()) {
-            self.launching = true;
-            self.notice = Some("Refreshing Microsoft sign-in…".into());
-            let id = account.uuid;
-            return Task::perform(
-                async move {
-                    microsoft::refresh_account(&account)
-                        .await
-                        .map_err(|error| error.to_string())
-                },
-                move |result| Message::MicrosoftAccountRefreshedForLaunch(id, result),
-            );
-        } else if let Some(instance) = self.selected_instance().cloned() {
-            self.launching = true;
-            self.launch_session = Some(LaunchSession {
-                instance_id: instance.id,
-                status: "Preparing Java, libraries, natives, and launch arguments…".into(),
-                logs: Vec::new(),
-                log_path: None,
-                pid: None,
-                ready: false,
-                active: true,
-                failed: false,
-                ready_at: None,
-            });
-            self.launch_request = Some(LaunchKey {
-                attempt: Uuid::new_v4(),
-                instance,
-                account,
-                paths: self.paths.clone(),
-            });
+
+        if self.launch_auth.needs_verification(&account) {
+            let Some(check) = self.launch_auth.begin(instance, &account) else {
+                return Task::none();
+            };
+            return Self::check_microsoft_account_for_launch(check, account);
         }
+
+        self.start_instance_launch(instance, account);
         Task::none()
     }
 
-    fn handle_launch_event(&mut self, event: launcher::LaunchEvent) -> Task<Message> {
+    fn start_instance_launch(&mut self, instance: Instance, account: OfflineAccount) {
+        if self.deleting_instances.contains(&instance.id)
+            || !self
+                .persisted
+                .instances
+                .iter()
+                .any(|stored| stored.id == instance.id)
+        {
+            self.notice = Some(format!(
+                "{} is no longer available to launch.",
+                instance.name
+            ));
+            return;
+        }
+        let attempt = match self.launches.begin(
+            &instance,
+            "Preparing Java, libraries, natives, and launch arguments…",
+        ) {
+            Ok(attempt) => attempt,
+            Err(LaunchConflict::InstanceAlreadyActive) => {
+                self.notice = Some(format!("{} is already running.", instance.name));
+                return;
+            }
+            Err(LaunchConflict::SharedDirectoryActive) => {
+                self.notice = Some(
+                    "Another non-isolated instance is already using the shared Minecraft directory."
+                        .into(),
+                );
+                return;
+            }
+        };
+
+        self.activate_launch(attempt, account);
+    }
+
+    fn activate_launch(&mut self, attempt: LaunchAttempt, account: OfflineAccount) {
+        if let Some(session) = self.launches.session_mut(&attempt) {
+            session.status = "Preparing Java, libraries, natives, and launch arguments…".into();
+        }
+        if !self
+            .launches
+            .activate(&attempt, account, self.paths.clone())
+        {
+            self.fail_launch_attempt(
+                &attempt,
+                "Launch failed: the request is no longer current.".into(),
+                "The launch request was superseded before it could start.".into(),
+            );
+        }
+    }
+
+    fn fail_launch_attempt(&mut self, attempt: &LaunchAttempt, status: String, notice: String) {
+        let failed = if let Some(session) = self.launches.session_mut(attempt) {
+            session.active = false;
+            session.failed = true;
+            session.logs.push(format!("[AZULC] {status}"));
+            session.status = status;
+            true
+        } else {
+            false
+        };
+        if failed {
+            self.launches.finish(attempt);
+            self.notice = Some(notice);
+        }
+    }
+
+    fn handle_launch_event(
+        &mut self,
+        attempt: &LaunchAttempt,
+        event: launcher::LaunchEvent,
+    ) -> Task<Message> {
+        let instance_name = self
+            .persisted
+            .instances
+            .iter()
+            .find(|instance| instance.id == attempt.instance_id)
+            .map_or_else(|| "Minecraft".into(), |instance| instance.name.clone());
         let mut play_time = None;
-        if let Some(session) = self.launch_session.as_mut() {
+        let mut terminal = false;
+        let mut notice = None;
+        if let Some(session) = self.launches.session_mut(attempt) {
             match event {
                 launcher::LaunchEvent::Started(result) => {
                     session.pid = Some(result.pid);
@@ -1387,11 +1563,10 @@ impl Launcher {
                     }
                 }
                 launcher::LaunchEvent::Ready => {
-                    session.ready = true;
-                    session.ready_at = Some(Instant::now());
+                    session.mark_ready();
                     session.status =
                         "Render thread detected · Minecraft started successfully".into();
-                    self.notice = Some("Minecraft started successfully.".into());
+                    notice = Some(format!("{instance_name} started successfully."));
                 }
                 launcher::LaunchEvent::Exited {
                     code,
@@ -1400,10 +1575,9 @@ impl Launcher {
                 } => {
                     session.active = false;
                     session.log_path = Some(log_path);
-                    self.launching = false;
-                    self.launch_request = None;
-                    if let Some(started) = session.ready_at {
-                        play_time = Some((session.instance_id, started.elapsed().as_secs()));
+                    terminal = true;
+                    if let Some(seconds) = session.ready_elapsed_seconds() {
+                        play_time = Some((session.instance_id, seconds));
                     }
                     if ready && code == Some(0) {
                         session.status = "Minecraft exited normally.".into();
@@ -1415,23 +1589,31 @@ impl Launcher {
                         } else {
                             format!("Minecraft exited before startup completed · exit code {code}")
                         };
-                        self.notice = Some(
-                            "Minecraft exited with an error. The launch log is shown here.".into(),
-                        );
+                        notice = Some(format!(
+                            "{instance_name} exited with an error. Its launch log is shown here."
+                        ));
                     }
                 }
                 launcher::LaunchEvent::Failed { message, log_path } => {
                     session.active = false;
                     session.failed = true;
+                    terminal = true;
                     session.status = format!("Launch failed: {message}");
                     session.log_path = log_path;
                     session.logs.push(format!("[AZULC] {message}"));
-                    self.launching = false;
-                    self.launch_request = None;
-                    self.notice =
-                        Some("Minecraft launch failed. The detailed log is shown here.".into());
+                    notice = Some(format!(
+                        "{instance_name} failed to launch. Its detailed log is shown here."
+                    ));
                 }
             }
+        } else {
+            return Task::none();
+        }
+        if terminal {
+            self.launches.finish(attempt);
+        }
+        if let Some(notice) = notice {
+            self.notice = Some(notice);
         }
         if let Some((id, seconds)) = play_time
             && let Some(instance) = self
@@ -2178,11 +2360,13 @@ impl Launcher {
         Task::none()
     }
 
-    fn refresh_insights(&self) -> Task<Message> {
+    fn refresh_insights(&mut self) -> Task<Message> {
+        self.insights_request_id = self.insights_request_id.wrapping_add(1);
+        let request_id = self.insights_request_id;
         let instances = self.persisted.instances.clone();
         Task::perform(
             async move { insights::scan_instances(&instances).await },
-            Message::InsightsLoaded,
+            move |summary| Message::InsightsLoaded(request_id, summary),
         )
     }
 
@@ -2220,6 +2404,18 @@ impl Launcher {
             .instances
             .iter()
             .find(|instance| instance.id == id)
+    }
+
+    pub(crate) fn is_instance_launching(&self, id: Uuid) -> bool {
+        self.launches.is_active(id)
+    }
+
+    pub(crate) fn is_instance_deleting(&self, id: Uuid) -> bool {
+        self.deleting_instances.contains(&id)
+    }
+
+    pub(crate) fn launch_session(&self, id: Uuid) -> Option<&LaunchSession> {
+        self.launches.session(id)
     }
 
     fn selected_instance_mut(&mut self) -> Option<&mut Instance> {
@@ -2384,7 +2580,7 @@ fn pipeline_message((id, event): (Uuid, PipelineEvent)) -> Message {
 fn launch_stream(key: &LaunchKey) -> impl futures::Stream<Item = launcher::LaunchEvent> + use<> {
     let key = key.clone();
     iced::stream::channel(256, async move |mut output| {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(256);
         let monitor = launcher::monitor(key.instance, key.account, key.paths, tx);
         tokio::pin!(monitor);
         loop {
@@ -2406,6 +2602,10 @@ fn launch_stream(key: &LaunchKey) -> impl futures::Stream<Item = launcher::Launc
             }
         }
     })
+}
+
+fn launch_message((attempt, event): (LaunchAttempt, launcher::LaunchEvent)) -> Message {
+    Message::LaunchEvent(attempt, event)
 }
 
 async fn load_versions(policy: DownloadPolicy) -> Result<Vec<minecraft::VersionEntry>, String> {

@@ -35,7 +35,11 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
 }
 
 fn instance_detail<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Message> {
-    let launch_label = if app.launching {
+    let launching = app.is_instance_launching(instance.id);
+    let deleting = app.is_instance_deleting(instance.id);
+    let launch_label = if deleting {
+        "DELETING…"
+    } else if launching {
         "RUNNING…"
     } else {
         "PLAY  >"
@@ -62,12 +66,8 @@ fn instance_detail<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a,
         ]
         .spacing(4),
         Space::new().width(Fill),
-        button(text("OPEN").size(13))
-            .on_press(Message::OpenPath(instance.game_dir.clone()))
-            .padding([10, 14])
-            .style(theme::ghost_button),
         button(text(launch_label).size(15))
-            .on_press_maybe((!app.launching).then_some(Message::LaunchSelected))
+            .on_press_maybe((!launching && !deleting).then_some(Message::LaunchSelected))
             .padding([10, 20])
             .style(theme::primary_button)
     ]
@@ -149,27 +149,32 @@ fn overview<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Messag
     .spacing(12);
 
     let folder = container(
-        column![
-            text("WORKSPACE PATH")
-                .font(theme::BODY_BOLD)
-                .size(10)
-                .color(theme::MUTED),
-            text(instance.game_dir.display().to_string())
-                .font(theme::BODY_FONT)
-                .size(11)
-                .color(theme::LAVENDER_SOFT)
+        row![
+            column![
+                text("WORKSPACE PATH")
+                    .font(theme::BODY_BOLD)
+                    .size(10)
+                    .color(theme::MUTED),
+                text(instance.game_dir.display().to_string())
+                    .font(theme::BODY_FONT)
+                    .size(11)
+                    .color(theme::LAVENDER_SOFT)
+            ]
+            .spacing(5)
+            .width(Fill),
+            button(text("OPEN").size(13))
+                .on_press(Message::OpenPath(instance.game_dir.clone()))
+                .padding([10, 14])
+                .style(theme::ghost_button)
         ]
-        .spacing(5),
+        .spacing(12)
+        .align_y(Alignment::Center),
     )
     .width(Fill)
     .padding(15)
     .style(theme::inset);
 
-    if let Some(session) = app
-        .launch_session
-        .as_ref()
-        .filter(|session| session.instance_id == instance.id)
-    {
+    if let Some(session) = app.launch_session(instance.id) {
         column![information, folder, launch_session(session)]
             .spacing(14)
             .width(Fill)
@@ -523,10 +528,20 @@ fn instance_settings<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'
                 "Shown in compatible game screens",
                 Message::SetInstanceCustomInfo,
             ),
-            button(text("DELETE INSTANCE DATA").size(13))
-                .on_press(Message::DeleteInstance(instance.id))
-                .padding([10, 14])
-                .style(theme::danger_window_button)
+            button(
+                text(if app.is_instance_deleting(instance.id) {
+                    "DELETING INSTANCE…"
+                } else {
+                    "DELETE INSTANCE DATA"
+                })
+                .size(13),
+            )
+            .on_press_maybe(
+                (!app.is_instance_launching(instance.id) && !app.is_instance_deleting(instance.id))
+                    .then_some(Message::DeleteInstance(instance.id))
+            )
+            .padding([10, 14])
+            .style(theme::danger_window_button)
         ]
         .spacing(13),
     );

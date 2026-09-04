@@ -19,7 +19,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 const READY_FLAGS: [&str; 3] = ["render thread", "lwjgl version", "lwjgl openal"];
 
@@ -78,7 +78,7 @@ pub async fn monitor(
     instance: Instance,
     account: OfflineAccount,
     paths: Paths,
-    tx: UnboundedSender<LaunchEvent>,
+    tx: Sender<LaunchEvent>,
 ) {
     let fallback_log = instance.game_dir.join(".azulc/latest-launch.log");
     let error_tx = tx.clone();
@@ -91,17 +91,19 @@ pub async fn monitor(
         Ok(Err(error)) => error.to_string(),
         Err(error) => format!("launch monitor task failed: {error}"),
     };
-    let _ = error_tx.send(LaunchEvent::Failed {
-        message: error,
-        log_path: fallback_log.is_file().then_some(fallback_log),
-    });
+    let _ = error_tx
+        .send(LaunchEvent::Failed {
+            message: error,
+            log_path: fallback_log.is_file().then_some(fallback_log),
+        })
+        .await;
 }
 
 fn launch_and_monitor_blocking(
     instance: Instance,
     account: OfflineAccount,
     paths: Paths,
-    tx: UnboundedSender<LaunchEvent>,
+    tx: Sender<LaunchEvent>,
 ) -> Result<(), LaunchError> {
     let chain = load_chain(&paths.minecraft, &instance.version_id)?;
     let merged = merge_chain(&chain);
@@ -338,7 +340,7 @@ fn launch_and_monitor_blocking(
         java: runtime,
         log_path: log_path.clone(),
     };
-    let _ = tx.send(LaunchEvent::Started(result));
+    let _ = tx.blocking_send(LaunchEvent::Started(result));
 
     let ready = Arc::new(AtomicBool::new(false));
     let stdout = child
@@ -360,7 +362,7 @@ fn launch_and_monitor_blocking(
     if let Ok(mut log) = launch_log.lock() {
         let _ = log.flush();
     }
-    let _ = tx.send(LaunchEvent::Exited {
+    let _ = tx.blocking_send(LaunchEvent::Exited {
         code: status.code(),
         ready: was_ready,
         log_path,
@@ -404,7 +406,7 @@ fn jvm_version_name(loader: LoaderKind, version_id: &str, minecraft_version: &st
 fn pipe_game_output<T: Read + Send + 'static>(
     output: T,
     log: Arc<Mutex<File>>,
-    tx: UnboundedSender<LaunchEvent>,
+    tx: Sender<LaunchEvent>,
     ready: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -429,13 +431,16 @@ fn pipe_game_output<T: Read + Send + 'static>(
                 let _ = writeln!(file, "{line}");
             }
             let is_ready = launch_line_is_ready(&line);
-            let _ = tx.send(LaunchEvent::Log(line));
+            // The complete line is already persisted above. Sampling live output when
+            // the bounded UI bridge is full keeps noisy games from blocking their own
+            // stdout/stderr pipes while preventing unbounded memory growth.
+            let _ = tx.try_send(LaunchEvent::Log(line));
             if is_ready
                 && ready
                     .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
             {
-                let _ = tx.send(LaunchEvent::Ready);
+                let _ = tx.blocking_send(LaunchEvent::Ready);
             }
         }
     })

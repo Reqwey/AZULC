@@ -95,6 +95,10 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         .into()
     } else {
         let selected = app.selected_instance();
+        let selected_is_launching =
+            selected.is_some_and(|instance| app.is_instance_launching(instance.id));
+        let selected_is_deleting =
+            selected.is_some_and(|instance| app.is_instance_deleting(instance.id));
         container(
             row![
                 column![
@@ -116,7 +120,9 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                 .spacing(4),
                 Space::new().width(Fill),
                 button(
-                    text(if app.launching {
+                    text(if selected_is_deleting {
+                        "DELETING…"
+                    } else if selected_is_launching {
                         "RUNNING…"
                     } else {
                         "PLAY  >"
@@ -124,7 +130,8 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                     .size(16)
                 )
                 .on_press_maybe(
-                    (selected.is_some() && !app.launching).then_some(Message::LaunchSelected)
+                    (selected.is_some() && !selected_is_launching && !selected_is_deleting)
+                        .then_some(Message::LaunchSelected)
                 )
                 .padding([12, 24])
                 .style(theme::primary_button)
