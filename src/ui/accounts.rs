@@ -9,6 +9,8 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Fill, Length};
 
+use super::icons::{self, WindowControl};
+
 pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
     let header = row![
         column![
@@ -251,10 +253,11 @@ fn account_row(account: &OfflineAccount, selected: bool) -> Element<'_, Message>
                 } else {
                     theme::ghost_button
                 }),
-            button(text("×").size(17))
+            button(icons::window_control(WindowControl::Close))
                 .on_press(Message::DeleteAccount(account.uuid))
                 .width(38)
                 .height(38)
+                .padding(0)
                 .style(theme::danger_window_button)
         ]
         .spacing(11)

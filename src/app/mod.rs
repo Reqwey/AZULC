@@ -206,6 +206,7 @@ pub struct Launcher {
     launches: LaunchRegistry,
     deleting_instances: HashSet<Uuid>,
     window_id: Option<window::Id>,
+    pub(crate) window_maximized: bool,
     next_modal_id: u64,
 }
 
@@ -213,6 +214,9 @@ pub struct Launcher {
 pub enum Message {
     Navigate(Route),
     WindowOpened(window::Id),
+    WindowLocated(Option<window::Id>),
+    WindowResized(window::Id),
+    WindowMaximizedChanged(bool),
     DragWindow,
     ResizeWindow(window::Direction),
     ToggleMaximize,
@@ -383,6 +387,7 @@ impl Launcher {
             launches: LaunchRegistry::default(),
             deleting_instances: HashSet::new(),
             window_id: None,
+            window_maximized: false,
             next_modal_id: 0,
         };
         (
@@ -401,6 +406,7 @@ impl Launcher {
                     repair_instance_version_files(instance_file_paths, instance_files),
                     |_| Message::InstanceVersionFilesRepaired,
                 ),
+                window::oldest().map(Message::WindowLocated),
             ]),
         )
     }
@@ -416,6 +422,7 @@ impl Launcher {
     pub fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions: Vec<Subscription<Message>> = vec![
             window::open_events().map(Message::WindowOpened),
+            window::resize_events().map(|(id, _)| Message::WindowResized(id)),
             iced::time::every(Duration::from_secs(2)).map(|_| Message::RefreshSystemResources),
         ];
         subscriptions.extend(self.jobs.values().filter(|job| job.active).map(|job| {
@@ -445,7 +452,22 @@ impl Launcher {
                     return self.load_selected_content();
                 }
             }
-            Message::WindowOpened(id) => self.window_id = Some(id),
+            Message::WindowOpened(id) => {
+                self.window_id = Some(id);
+                return window::is_maximized(id).map(Message::WindowMaximizedChanged);
+            }
+            Message::WindowLocated(id) => {
+                self.window_id = id;
+                if let Some(id) = id {
+                    return window::is_maximized(id).map(Message::WindowMaximizedChanged);
+                }
+            }
+            Message::WindowResized(id) => {
+                if self.window_id == Some(id) {
+                    return window::is_maximized(id).map(Message::WindowMaximizedChanged);
+                }
+            }
+            Message::WindowMaximizedChanged(maximized) => self.window_maximized = maximized,
             Message::DragWindow => {
                 if let Some(id) = self.window_id {
                     return window::drag(id);
@@ -458,7 +480,8 @@ impl Launcher {
             }
             Message::ToggleMaximize => {
                 if let Some(id) = self.window_id {
-                    return window::toggle_maximize(id);
+                    self.window_maximized = !self.window_maximized;
+                    return window::maximize(id, self.window_maximized);
                 }
             }
             Message::MinimizeWindow => {

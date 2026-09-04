@@ -99,7 +99,11 @@ impl Launcher {
             root
         };
 
-        let framed = resize_frame(content);
+        let framed = if self.window_maximized {
+            content
+        } else {
+            resize_frame(content)
+        };
         if self.launch_auth.is_blocking() {
             let blocked_workspace = framed.map(|_| Message::LaunchAuthenticationBackdropPressed);
             let backdrop = mouse_area(
@@ -274,29 +278,37 @@ fn delete_confirmation(app: &Launcher) -> Element<'_, Message> {
 }
 
 fn titlebar(app: &Launcher) -> Element<'_, Message> {
-    let drag_region = mouse_area(
-        container(text("Azusa Minecraft Launcher").align_y(Alignment::Center))
-            .padding([0, 16])
-            .width(Fill)
-            .height(44)
-            .align_y(iced::alignment::Vertical::Center),
-    )
-    .on_press(Message::DragWindow)
-    .on_double_click(Message::ToggleMaximize);
+    let title = container(text("Azusa Minecraft Launcher").align_y(Alignment::Center))
+        .padding([0, 16])
+        .width(Fill)
+        .height(44)
+        .align_y(iced::alignment::Vertical::Center);
 
     let controls = row![
         window_button(WindowControl::Minimize, Message::MinimizeWindow, false),
-        window_button(WindowControl::Maximize, Message::ToggleMaximize, false),
+        window_button(
+            if app.window_maximized {
+                WindowControl::Restore
+            } else {
+                WindowControl::Maximize
+            },
+            Message::ToggleMaximize,
+            false
+        ),
         window_button(WindowControl::Close, Message::CloseWindow, true),
     ]
     .height(44)
     .align_y(Alignment::Center);
 
-    container(row![drag_region, titlebar_account(app), controls])
-        .height(44)
-        .width(Fill)
-        .style(theme::titlebar)
-        .into()
+    mouse_area(
+        container(row![title, titlebar_account(app), controls])
+            .height(44)
+            .width(Fill)
+            .style(theme::titlebar),
+    )
+    .on_press(Message::DragWindow)
+    .on_double_click(Message::ToggleMaximize)
+    .into()
 }
 
 fn titlebar_account(app: &Launcher) -> Element<'_, Message> {
