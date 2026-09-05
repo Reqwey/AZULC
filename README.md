@@ -56,7 +56,7 @@ state and coordinates events, and services perform filesystem, network, installa
 and process work.
 
 <p align="center">
-  <img src="assets/architecture/three-layer-shuttle.svg" width="720" alt="AZULC three-layer architecture shuttle">
+  <img src="assets/architecture/three-layer-shuttle.svg" width="540" alt="AZULC three-layer architecture shuttle">
 </p>
 
 ### UI
