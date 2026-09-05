@@ -33,7 +33,7 @@ AZULC_CURSEFORGE_API_KEY='<your approved key>'
 AZULC_MICROSOFT_CLIENT_ID='<Azusa Minecraft Launcher application client ID>'
 ```
 
-AZULC loads `.env` automatically. Process-level environment variables take precedence.
+AZULC reads only this file at build time and embeds both values into the executable..
 
 Build an optimized binary:
 

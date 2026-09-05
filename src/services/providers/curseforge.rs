@@ -1,8 +1,11 @@
 //! CurseForge API models and client operations.
 
-use crate::services::{
-    download::{self, DownloadSpec, integrity},
-    path_safety,
+use crate::{
+    environment,
+    services::{
+        download::{self, DownloadSpec, integrity},
+        path_safety,
+    },
 };
 use reqwest::{
     Client, StatusCode, Url,
@@ -471,8 +474,6 @@ pub struct ResourceInstallResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CurseForgeError {
-    #[error("{API_KEY_ENV} is not set")]
-    MissingApiKey,
     #[error("{API_KEY_ENV} is empty or is not a valid HTTP header value")]
     InvalidApiKey,
     #[error("failed to build an HTTP client: {0}")]
@@ -554,14 +555,9 @@ pub struct CurseForgeClient {
 }
 
 impl CurseForgeClient {
-    /// Creates a client using only the runtime environment variable
-    /// `AZULC_CURSEFORGE_API_KEY`.
+    /// Creates a client using the API key embedded from the build-time `.env`.
     pub fn from_env() -> Result<Self, CurseForgeError> {
-        let raw_key = std::env::var_os(API_KEY_ENV).ok_or(CurseForgeError::MissingApiKey)?;
-        let raw_key = raw_key
-            .into_string()
-            .map_err(|_| CurseForgeError::InvalidApiKey)?;
-        let raw_key = raw_key.trim();
+        let raw_key = environment::curseforge_api_key();
         if raw_key.is_empty() {
             return Err(CurseForgeError::InvalidApiKey);
         }

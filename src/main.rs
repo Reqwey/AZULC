@@ -2,6 +2,8 @@
 
 mod app;
 mod domain;
+#[cfg(test)]
+mod dotenv_file;
 mod environment;
 mod services;
 mod storage;
@@ -9,8 +11,6 @@ mod theme;
 mod ui;
 
 fn main() -> iced::Result {
-    environment::load();
-
     let mut window_settings = iced::window::Settings {
         size: iced::Size::new(1360.0, 820.0),
         min_size: Some(iced::Size::new(1100.0, 700.0)),

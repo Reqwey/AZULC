@@ -1,7 +1,7 @@
 use crate::{
     domain::{Account, Instance, JavaRuntime, LoaderKind},
+    environment,
     services::{
-        auth::microsoft,
         java,
         minecraft::{self, Arguments, Library, Rule, VersionJson},
         path_safety,
@@ -167,10 +167,7 @@ fn launch_and_monitor_blocking(
     let auth_session = format!("token:{}:{}", account.access_token, account.uuid.simple());
     vars.insert("${auth_access_token}", account.access_token);
     vars.insert("${auth_session}", auth_session);
-    vars.insert(
-        "${clientid}",
-        std::env::var(microsoft::CLIENT_ID_ENV).unwrap_or_default(),
-    );
+    vars.insert("${clientid}", environment::microsoft_client_id().to_owned());
     vars.insert("${auth_xuid}", account.xuid.clone().unwrap_or_default());
     vars.insert("${user_type}", "msa".into());
     vars.insert("${version_type}", "release".into());

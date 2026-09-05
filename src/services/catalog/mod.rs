@@ -16,9 +16,7 @@ pub(crate) use resources::{
 
 pub(crate) fn missing_credential(provider: CatalogProvider) -> Option<&'static str> {
     match provider {
-        CatalogProvider::CurseForge
-            if std::env::var_os(crate::services::providers::curseforge::API_KEY_ENV).is_none() =>
-        {
+        CatalogProvider::CurseForge if crate::environment::curseforge_api_key().is_empty() => {
             Some(crate::services::providers::curseforge::API_KEY_ENV)
         }
         CatalogProvider::CurseForge | CatalogProvider::Modrinth => None,

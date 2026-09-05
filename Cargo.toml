@@ -8,7 +8,6 @@ description = "Azusa Minecraft Launcher — a next-generation lightweight, high-
 [dependencies]
 chrono = "0.4"
 directories = "6.0"
-dotenvy = "0.15"
 futures = "0.3"
 hex = "0.4"
 iced = { version = "0.14", features = ["tokio", "image", "svg"] }

@@ -1,12 +1,12 @@
 //! Microsoft device-code authentication and Minecraft profile retrieval.
 
-use crate::domain::Account;
+use crate::{domain::Account, environment};
 use image::{RgbaImage, imageops::FilterType};
 use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::json;
 use std::{
-    env, fmt,
+    fmt,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -15,7 +15,7 @@ use std::{
 };
 use uuid::Uuid;
 
-pub const CLIENT_ID_ENV: &str = "AZULC_MICROSOFT_CLIENT_ID";
+pub use crate::environment::MICROSOFT_CLIENT_ID_ENV as CLIENT_ID_ENV;
 const SCOPE: &str = "XboxLive.signin offline_access";
 const DEVICE_ENDPOINT: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const TOKEN_ENDPOINT: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
@@ -26,7 +26,7 @@ const MINECRAFT_TOKEN_ENDPOINT: &str =
 const PROFILE_ENDPOINT: &str = "https://api.minecraftservices.com/minecraft/profile";
 
 pub fn is_configured() -> bool {
-    client_id().is_ok()
+    !environment::microsoft_client_id().is_empty()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -50,8 +50,6 @@ impl DeviceAuthorization {
 
 #[derive(Debug, thiserror::Error)]
 pub enum MicrosoftError {
-    #[error("set {CLIENT_ID_ENV} to the client ID of the approved AZULC Azure application")]
-    MissingClientId,
     #[error("Microsoft sign-in was cancelled")]
     Cancelled,
     #[error("Microsoft sign-in code expired; start sign-in again")]
@@ -186,7 +184,7 @@ struct MinecraftTexture {
 }
 
 pub async fn begin_device_authorization() -> Result<DeviceAuthorization, MicrosoftError> {
-    let client_id = client_id()?;
+    let client_id = client_id();
     let client = http_client()?;
     let response = client
         .post(DEVICE_ENDPOINT)
@@ -200,7 +198,7 @@ pub async fn complete_device_authorization(
     authorization: DeviceAuthorization,
     cancelled: Arc<AtomicBool>,
 ) -> Result<Account, MicrosoftError> {
-    let client_id = client_id()?;
+    let client_id = client_id();
     let client = http_client()?;
     let started = std::time::Instant::now();
     let mut interval = authorization.interval.max(1);
@@ -246,7 +244,7 @@ pub async fn complete_device_authorization(
 }
 
 pub async fn refresh_account(account: &Account) -> Result<Account, AccountRefreshError> {
-    let client_id = client_id().map_err(AccountRefreshError::before_token_rotation)?;
+    let client_id = client_id();
     if account.refresh_token.is_empty() {
         return Err(AccountRefreshError::before_token_rotation(
             MicrosoftError::Expired,
@@ -495,12 +493,8 @@ async fn decode_json<T: for<'de> Deserialize<'de>>(
     })
 }
 
-fn client_id() -> Result<String, MicrosoftError> {
-    env::var(CLIENT_ID_ENV)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.trim().to_owned())
-        .ok_or(MicrosoftError::MissingClientId)
+fn client_id() -> String {
+    environment::microsoft_client_id().to_owned()
 }
 
 fn http_client() -> Result<Client, MicrosoftError> {
