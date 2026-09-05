@@ -4,12 +4,17 @@ use crate::{
     domain::InstanceColor,
     services::{content::ContentKind, minecraft},
 };
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) enum Route {
     #[default]
     Home,
-    Instances,
+    Instance {
+        id: Uuid,
+        tab: InstanceTab,
+    },
+    Installation(Uuid),
     NewInstance,
     Accounts,
     Settings,
@@ -19,10 +24,39 @@ impl Route {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Home => "Home",
-            Self::Instances => "Instances",
+            Self::Instance { .. } => "Instance",
+            Self::Installation(_) => "Installation",
             Self::NewInstance => "New Instance",
             Self::Accounts => "Accounts",
             Self::Settings => "App Settings",
+        }
+    }
+
+    pub(crate) const fn instance(id: Uuid) -> Self {
+        Self::Instance {
+            id,
+            tab: InstanceTab::Overview,
+        }
+    }
+
+    pub(crate) const fn installed_instance(self) -> Option<(Uuid, InstanceTab)> {
+        match self {
+            Self::Instance { id, tab } => Some((id, tab)),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn target_id(self) -> Option<Uuid> {
+        match self {
+            Self::Instance { id, .. } | Self::Installation(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn after_instance_deleted(self, deleted_id: Uuid) -> Self {
+        match self {
+            Self::Instance { id, .. } if id == deleted_id => Self::Home,
+            _ => self,
         }
     }
 }
@@ -191,8 +225,9 @@ impl VersionFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::VersionFilter;
+    use super::{InstanceTab, Route, VersionFilter};
     use crate::{domain::InstanceColor, services::minecraft};
+    use uuid::Uuid;
 
     fn version(kind: &str, release_time: &str) -> minecraft::VersionEntry {
         minecraft::VersionEntry {
@@ -221,6 +256,51 @@ mod tests {
         assert_eq!(
             VersionFilter::for_version(&version("snapshot", "2026-04-01T00:00:00Z")).color(),
             InstanceColor::Rose
+        );
+    }
+
+    #[test]
+    fn instance_routes_carry_their_own_identity_and_tab() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+
+        let route = Route::Instance {
+            id: first,
+            tab: InstanceTab::Mods,
+        };
+
+        assert_eq!(route.installed_instance(), Some((first, InstanceTab::Mods)));
+        assert_eq!(route.target_id(), Some(first));
+        assert_ne!(route, Route::instance(second));
+        assert_eq!(
+            Route::instance(first).installed_instance(),
+            Some((first, InstanceTab::Overview))
+        );
+    }
+
+    #[test]
+    fn installation_routes_are_distinct_from_installed_instances() {
+        let id = Uuid::from_u128(7);
+
+        assert_eq!(Route::Installation(id).target_id(), Some(id));
+        assert_eq!(Route::Installation(id).installed_instance(), None);
+        assert_ne!(Route::Installation(id), Route::instance(id));
+    }
+
+    #[test]
+    fn deleting_the_routed_instance_goes_home_without_moving_background_routes() {
+        let current = Uuid::from_u128(11);
+        let background = Uuid::from_u128(12);
+        let route = Route::Instance {
+            id: current,
+            tab: InstanceTab::Settings,
+        };
+
+        assert_eq!(route.after_instance_deleted(current), Route::Home);
+        assert_eq!(route.after_instance_deleted(background), route);
+        assert_eq!(
+            Route::Accounts.after_instance_deleted(current),
+            Route::Accounts
         );
     }
 }

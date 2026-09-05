@@ -2,7 +2,7 @@ use iced::widget::{container, svg};
 use iced::{Element, Fill, alignment};
 
 #[derive(Debug, Clone, Copy)]
-pub enum WindowControl {
+pub(in crate::ui) enum WindowControl {
     Minimize,
     Maximize,
     Restore,
@@ -14,7 +14,7 @@ const MAXIMIZE: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 
 const RESTORE: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.5 8.5h10v10h-10zM5.5 15.5v-10h10v3" transform="translate(24 0) scale(-1 1)" fill="none" stroke="#F5F0FF" stroke-width="1.5" stroke-linejoin="miter"/></svg>"##;
 const CLOSE: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="#F5F0FF" stroke-width="1.7" stroke-linecap="square"/></svg>"##;
 
-pub fn window_control<'a, Message>(control: WindowControl) -> Element<'a, Message>
+pub(in crate::ui) fn window_control<'a, Message>(control: WindowControl) -> Element<'a, Message>
 where
     Message: 'a,
 {

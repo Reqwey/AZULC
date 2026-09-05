@@ -330,7 +330,7 @@ fn launch_and_monitor_blocking(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
+        command.creation_flags(java::CREATE_NO_WINDOW);
     }
     let mut child = command
         .spawn()

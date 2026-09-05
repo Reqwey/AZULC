@@ -7,26 +7,26 @@ use iced::widget::{button, container, image as iced_image, row, text};
 use iced::{Alignment, Element, Length, alignment};
 use std::sync::OnceLock;
 
-const VANILLA_BYTES: &[u8] = include_bytes!("../../assets/loaders/JEIcon_Release.png");
-const FABRIC_BYTES: &[u8] = include_bytes!("../../assets/loaders/Fabric.png");
-const FORGE_BYTES: &[u8] = include_bytes!("../../assets/loaders/Forge.png");
-const NEOFORGE_BYTES: &[u8] = include_bytes!("../../assets/loaders/NeoForge.png");
+const VANILLA_BYTES: &[u8] = include_bytes!("../../../assets/loaders/JEIcon_Release.png");
+const FABRIC_BYTES: &[u8] = include_bytes!("../../../assets/loaders/Fabric.png");
+const FORGE_BYTES: &[u8] = include_bytes!("../../../assets/loaders/Forge.png");
+const NEOFORGE_BYTES: &[u8] = include_bytes!("../../../assets/loaders/NeoForge.png");
 
 static VANILLA: OnceLock<iced_image::Handle> = OnceLock::new();
 static FABRIC: OnceLock<iced_image::Handle> = OnceLock::new();
 static FORGE: OnceLock<iced_image::Handle> = OnceLock::new();
 static NEOFORGE: OnceLock<iced_image::Handle> = OnceLock::new();
 
-pub(crate) fn instance_marker<'a>(color: InstanceColor, size: u32) -> Element<'a, Message> {
+pub(in crate::ui) fn instance_marker<'a>(color: InstanceColor, size: u32) -> Element<'a, Message> {
     text("◆")
         .size(size)
         .color(theme::instance_color(color))
         .into()
 }
 
-pub(crate) fn instance_color_picker(
+pub(in crate::ui) fn instance_color_picker(
     selected: InstanceColor,
-    on_pick: fn(InstanceColor) -> Message,
+    on_pick: impl Fn(InstanceColor) -> Message,
 ) -> Element<'static, Message> {
     let mut colors = row![].spacing(7).align_y(Alignment::Center);
     for color in InstanceColor::ALL {
@@ -53,7 +53,7 @@ pub(crate) fn instance_color_picker(
     colors.into()
 }
 
-pub(crate) fn loader_icon<'a>(kind: LoaderKind, size: f32) -> Element<'a, Message> {
+pub(in crate::ui) fn loader_icon<'a>(kind: LoaderKind, size: f32) -> Element<'a, Message> {
     iced_image(loader_handle(kind))
         .width(size)
         .height(size)
@@ -61,7 +61,7 @@ pub(crate) fn loader_icon<'a>(kind: LoaderKind, size: f32) -> Element<'a, Messag
         .into()
 }
 
-pub(crate) fn thumbnail<'a>(
+pub(in crate::ui) fn thumbnail<'a>(
     handle: Option<&iced_image::Handle>,
     fallback: &'static str,
 ) -> Element<'a, Message> {

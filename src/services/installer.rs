@@ -1038,6 +1038,8 @@ async fn install_forge_family(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(java::CREATE_NO_WINDOW);
     let mut child = command.spawn()?;
     let stdout = child.stdout.take().map(BufReader::new);
     let stderr = child.stderr.take().map(BufReader::new);

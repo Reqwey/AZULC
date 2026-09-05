@@ -907,7 +907,7 @@ mod tests {
             "manifestType":"minecraftModpack",
             "name":"Old Forge Pack",
             "version":"1.0",
-            "author":"Azul",
+            "author":"Azulc",
             "minecraft":{"version":"1.7.10","modLoaders":[{"id":"forge-10.13.4.1614","primary":true}]},
             "files":[{"projectID":12,"fileID":34,"required":true}],
             "overrides":"overrides/"
@@ -1037,7 +1037,7 @@ mod tests {
                 {"uid":"net.neoforged","cachedVersion":"47.1.106"}
             ]
         }"#;
-        let config = b"name=Prism Pack\nManagedPackVersionName=3.0\nauthor=Azul\n";
+        let config = b"name=Prism Pack\nManagedPackVersionName=3.0\nauthor=Azulc\n";
         let bytes = zip_fixture(&[
             ("Prism Pack/mmc-pack.json", manifest),
             ("Prism Pack/instance.cfg", config),

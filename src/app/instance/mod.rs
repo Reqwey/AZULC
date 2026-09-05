@@ -10,8 +10,12 @@ use iced::Task;
 use uuid::Uuid;
 
 impl Launcher {
-    pub(super) fn edit_instance(&mut self, edit: impl FnOnce(&mut Instance)) {
-        if let Some(instance) = self.selected_instance_mut() {
+    pub(super) fn edit_instance(&mut self, id: Uuid, edit: impl FnOnce(&mut Instance)) {
+        if !matches!(self.route, super::navigation::Route::Instance { id: route_id, .. } if route_id == id)
+        {
+            return;
+        }
+        if let Some(instance) = self.instance_mut(id) {
             edit(instance);
             self.save();
         }

@@ -6,7 +6,7 @@ mod wizard;
 pub(crate) use modpacks::ModpackBrowserState;
 pub(crate) use wizard::{LoaderCatalogState, WizardDraft};
 
-use super::{Launcher, Message};
+use super::{Launcher, Message, navigation::Route};
 use crate::{
     domain::{InstallProgress, InstallRequest, InstallStage, PipelineEvent},
     services::installer,
@@ -49,8 +49,21 @@ impl InstallAttempt {
 }
 
 impl InstallJob {
+    pub(crate) fn attempt(&self) -> InstallAttempt {
+        self.attempt.clone()
+    }
+
     fn accepts(&self, attempt: &InstallAttempt) -> bool {
         self.active && self.attempt == *attempt
+    }
+
+    fn can_retry(&self, attempt: &InstallAttempt) -> bool {
+        !self.active
+            && self.attempt == *attempt
+            && matches!(
+                self.progress.stage,
+                InstallStage::Failed | InstallStage::Cancelled
+            )
     }
 }
 
@@ -70,25 +83,54 @@ impl Hash for PipelineKey {
 }
 
 impl Launcher {
-    pub(super) fn retry_install(&mut self, id: Uuid) {
+    pub(super) fn cancel_install(&mut self, attempt: &InstallAttempt) {
+        let Some(job) = self.jobs.get_mut(&attempt.instance_id) else {
+            return;
+        };
+        if !job.accepts(attempt) {
+            return;
+        }
+
+        job.active = false;
+        job.progress.stage = InstallStage::Cancelled;
+        job.progress.detail = "Task cancelled; verified files were kept.".into();
+        job.logs.push("[pipeline] task cancelled by user".into());
+        if let Some(path) = job.log_path.as_deref() {
+            let _ = append_install_log(path, "[cancelled] Task cancelled by user");
+        }
+    }
+
+    pub(super) fn retry_install(&mut self, attempt: InstallAttempt) {
+        let id = attempt.instance_id;
+        let Some(job) = self.jobs.get(&id) else {
+            return;
+        };
+        if !job.can_retry(&attempt) {
+            return;
+        }
         if self.jobs.values().any(|job| job.active) {
             self.notice = Some("Another install pipeline is already active.".into());
-        } else if let Some(job) = self.jobs.get_mut(&id) {
-            if job.request.modpack.is_some() {
-                match prepare_modpack_install_log(&self.paths, &job.request) {
-                    Ok(path) => job.log_path = Some(path),
-                    Err(error) => {
-                        self.notice = Some(error);
-                        return;
-                    }
+            return;
+        }
+
+        let job = self
+            .jobs
+            .get_mut(&id)
+            .expect("retry candidate was checked above");
+        if job.request.modpack.is_some() {
+            match prepare_modpack_install_log(&self.paths, &job.request) {
+                Ok(path) => job.log_path = Some(path),
+                Err(error) => {
+                    self.notice = Some(error);
+                    return;
                 }
             }
-            job.progress = InstallProgress::default();
-            job.logs
-                .push("[pipeline] retrying; verified files will be reused".into());
-            job.attempt = InstallAttempt::new(id);
-            job.active = true;
         }
+        job.progress = InstallProgress::default();
+        job.logs
+            .push("[pipeline] retrying; verified files will be reused".into());
+        job.attempt = InstallAttempt::new(id);
+        job.active = true;
     }
 
     pub(super) fn handle_pipeline(
@@ -130,8 +172,13 @@ impl Launcher {
             }
         }
         if let Some(instance) = finished {
+            let id = instance.id;
             self.persisted.instances.retain(|old| old.id != instance.id);
             self.persisted.instances.push(instance);
+            self.last_instance_id = Some(id);
+            if self.route == Route::Installation(id) {
+                self.route = Route::instance(id);
+            }
             self.save();
             self.notice = Some("Instance installed. It is ready to launch.".into());
             return self.refresh_insights();
@@ -351,6 +398,41 @@ mod tests {
         let replacement = job.attempt.clone();
 
         assert!(job.accepts(&replacement));
+    }
+
+    #[test]
+    fn completed_job_rejects_cancel_and_retry_from_its_finished_attempt() {
+        let attempt = InstallAttempt::new(Uuid::new_v4());
+        let mut job = install_job(attempt.clone());
+        job.active = false;
+        job.progress.stage = InstallStage::Complete;
+
+        assert!(!job.accepts(&attempt));
+        assert!(!job.can_retry(&attempt));
+    }
+
+    #[test]
+    fn replacement_attempt_rejects_controls_from_the_previous_generation() {
+        let instance_id = Uuid::new_v4();
+        let previous = InstallAttempt::new(instance_id);
+        let mut job = install_job(previous.clone());
+        job.active = false;
+        job.progress.stage = InstallStage::Failed;
+        job.attempt = InstallAttempt::new(instance_id);
+
+        assert!(!job.accepts(&previous));
+        assert!(!job.can_retry(&previous));
+    }
+
+    #[test]
+    fn failed_current_attempt_can_retry_but_cannot_cancel() {
+        let attempt = InstallAttempt::new(Uuid::new_v4());
+        let mut job = install_job(attempt.clone());
+        job.active = false;
+        job.progress.stage = InstallStage::Failed;
+
+        assert!(!job.accepts(&attempt));
+        assert!(job.can_retry(&attempt));
     }
 
     #[tokio::test]

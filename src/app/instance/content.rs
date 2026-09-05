@@ -1,7 +1,10 @@
 //! Instance-content browser state and task orchestration.
 
 use crate::{
-    app::{Launcher, Message},
+    app::{
+        Launcher, Message,
+        navigation::{InstanceTab, Route},
+    },
     services::{
         catalog::{
             self, CatalogProject, CatalogProvider, CatalogRelease, ResourceInstallRequest,
@@ -11,6 +14,7 @@ use crate::{
     },
 };
 use iced::Task;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -51,12 +55,31 @@ impl ResourceBrowserState {
 }
 
 impl Launcher {
-    pub(in crate::app) fn load_selected_content(&mut self) -> Task<Message> {
-        let Some(kind) = self.instance_tab.content_kind() else {
+    pub(in crate::app) fn is_resource_download_active(&self, instance_id: Uuid) -> bool {
+        has_active_resource_download(&self.active_resource_downloads, instance_id)
+    }
+
+    pub(in crate::app) fn load_instance_content(
+        &mut self,
+        id: Uuid,
+        tab: InstanceTab,
+    ) -> Task<Message> {
+        if self.route != (Route::Instance { id, tab }) {
+            return Task::none();
+        }
+        if self.is_instance_deleting(id) {
+            self.content_loading = false;
+            return Task::none();
+        }
+        self.content_request_id = self.content_request_id.wrapping_add(1);
+        let request_id = self.content_request_id;
+        let Some(kind) = tab.content_kind() else {
+            self.content_entries.clear();
+            self.content_scope = None;
             self.content_loading = false;
             return Task::none();
         };
-        let Some(instance) = self.selected_instance().cloned() else {
+        let Some(instance) = self.instance(id).cloned() else {
             self.content_entries.clear();
             self.content_scope = None;
             self.content_loading = false;
@@ -64,24 +87,35 @@ impl Launcher {
         };
         self.content_loading = true;
         self.content_entries.clear();
-        let id = instance.id;
         Task::perform(
             async move {
                 content_service::scan_content(&instance, kind)
                     .await
                     .map_err(|error| format!("Could not scan {}: {error}", kind_label(kind)))
             },
-            move |result| Message::ContentLoaded(id, kind, result),
+            move |result| Message::ContentLoaded(request_id, id, kind, result),
         )
     }
 
-    pub(in crate::app) fn open_resource_browser(&mut self, kind: ContentKind) -> Task<Message> {
+    pub(in crate::app) fn open_resource_browser(
+        &mut self,
+        id: Uuid,
+        kind: ContentKind,
+    ) -> Task<Message> {
         if !kind.downloadable() {
             self.notice = Some("This content page does not support catalog downloads.".into());
             return Task::none();
         }
-        let Some(instance) = self.selected_instance().cloned() else {
-            self.notice = Some("Select an installed instance first.".into());
+        if self.is_instance_deleting(id) {
+            self.notice = Some("That instance is currently being deleted.".into());
+            return Task::none();
+        }
+        if !matches!(self.route, Route::Instance { id: route_id, tab } if route_id == id && tab.content_kind() == Some(kind))
+        {
+            return Task::none();
+        }
+        let Some(instance) = self.instance(id).cloned() else {
+            self.notice = Some("That instance no longer exists.".into());
             return Task::none();
         };
         self.next_modal_id = self.next_modal_id.wrapping_add(1);
@@ -183,6 +217,17 @@ impl Launcher {
     }
 
     pub(in crate::app) fn download_resource(&mut self, file: CatalogRelease) -> Task<Message> {
+        let Some(instance_id) = self
+            .resource_browser
+            .as_ref()
+            .map(|browser| browser.instance_id)
+        else {
+            return Task::none();
+        };
+        if self.is_instance_deleting(instance_id) {
+            self.notice = Some("That instance is currently being deleted.".into());
+            return Task::none();
+        }
         let Some(browser) = self.resource_browser.as_mut() else {
             return Task::none();
         };
@@ -224,11 +269,22 @@ impl Launcher {
             "Resolving required dependencies for {}…",
             file.display_name
         ));
+        self.active_resource_downloads
+            .insert((modal_id, instance_id));
 
         Task::perform(catalog::install_resource(request), move |result| {
             Message::ResourceDownloaded(modal_id, instance_id, kind, result)
         })
     }
+}
+
+fn has_active_resource_download(
+    active_downloads: &HashSet<(u64, Uuid)>,
+    instance_id: Uuid,
+) -> bool {
+    active_downloads
+        .iter()
+        .any(|(_, active_instance_id)| *active_instance_id == instance_id)
 }
 
 fn kind_label(kind: ContentKind) -> &'static str {
@@ -239,5 +295,30 @@ fn kind_label(kind: ContentKind) -> &'static str {
         ContentKind::ShaderPacks => "shader packs",
         ContentKind::DataPacks => "data packs",
         ContentKind::Screenshots => "screenshots",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_active_resource_download;
+    use std::collections::HashSet;
+    use uuid::Uuid;
+
+    #[test]
+    fn instance_stays_locked_until_all_of_its_resource_downloads_finish() {
+        let instance_id = Uuid::from_u128(1);
+        let other_instance_id = Uuid::from_u128(2);
+        let mut active = HashSet::from([
+            (10, instance_id),
+            (11, instance_id),
+            (12, other_instance_id),
+        ]);
+
+        assert!(has_active_resource_download(&active, instance_id));
+        active.remove(&(10, instance_id));
+        assert!(has_active_resource_download(&active, instance_id));
+        active.remove(&(11, instance_id));
+        assert!(!has_active_resource_download(&active, instance_id));
+        assert!(has_active_resource_download(&active, other_instance_id));
     }
 }

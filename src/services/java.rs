@@ -9,7 +9,7 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+pub(super) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub async fn detect() -> Vec<JavaRuntime> {
     tokio::task::spawn_blocking(detect_blocking)

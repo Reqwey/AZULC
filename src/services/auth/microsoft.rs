@@ -60,6 +60,8 @@ pub enum MicrosoftError {
     AccessDenied,
     #[error("this Microsoft account does not own a Minecraft Java profile")]
     NoMinecraftProfile,
+    #[error("Minecraft rejected the newly issued access token")]
+    InvalidMinecraftToken,
     #[error("Microsoft authentication request failed: {0}")]
     Network(#[from] reqwest::Error),
     #[error("Microsoft authentication returned {status}: {message}")]
@@ -121,6 +123,12 @@ impl fmt::Display for AccountRefreshError {
 }
 
 impl std::error::Error for AccountRefreshError {}
+
+#[derive(Debug, Clone)]
+pub enum MinecraftTokenValidation {
+    Valid(OfflineAccount),
+    Invalid,
+}
 
 #[derive(Debug, Deserialize)]
 struct OAuthTokens {
@@ -267,9 +275,42 @@ pub async fn refresh_account(
         oauth.refresh_token = refresh_token.to_owned();
     }
     let replacement_refresh_token = oauth.refresh_token.clone();
-    account_from_oauth(&client, oauth).await.map_err(|source| {
+    let mut refreshed = account_from_oauth(&client, oauth).await.map_err(|source| {
         AccountRefreshError::after_token_rotation(source, replacement_refresh_token)
-    })
+    })?;
+    if refreshed.avatar_rgba.is_none() {
+        refreshed.avatar_rgba.clone_from(&account.avatar_rgba);
+    }
+    Ok(refreshed)
+}
+
+pub async fn validate_minecraft_token(
+    account: &OfflineAccount,
+) -> Result<MinecraftTokenValidation, MicrosoftError> {
+    if account.provider != AccountProvider::Microsoft {
+        return Err(MicrosoftError::InvalidResponse(
+            "Microsoft account provider",
+        ));
+    }
+    let Some(access_token) = account
+        .access_token
+        .as_deref()
+        .filter(|token| !token.is_empty())
+    else {
+        return Ok(MinecraftTokenValidation::Invalid);
+    };
+    let client = http_client()?;
+    let profile = match request_minecraft_profile(&client, access_token).await? {
+        MinecraftProfileResponse::Valid(profile) => profile,
+        MinecraftProfileResponse::InvalidToken => {
+            return Ok(MinecraftTokenValidation::Invalid);
+        }
+    };
+    let avatar_rgba = fetch_profile_avatar(&client, &profile).await;
+    let Some(validated) = account_with_profile(account, profile, avatar_rgba)? else {
+        return Ok(MinecraftTokenValidation::Invalid);
+    };
+    Ok(MinecraftTokenValidation::Valid(validated))
 }
 
 async fn account_from_oauth(
@@ -321,27 +362,14 @@ async fn account_from_oauth(
             .await?,
     )
     .await?;
-    let profile_response = client
-        .get(PROFILE_ENDPOINT)
-        .bearer_auth(&minecraft.access_token)
-        .send()
-        .await?;
-    if profile_response.status() == StatusCode::NOT_FOUND {
-        return Err(MicrosoftError::NoMinecraftProfile);
-    }
-    let profile: MinecraftProfile = decode_json(profile_response).await?;
-    let avatar_rgba = match profile
-        .skins
-        .iter()
-        .find(|skin| skin.state.eq_ignore_ascii_case("ACTIVE"))
-    {
-        // A transient texture-CDN failure must not invalidate an otherwise
-        // authenticated Minecraft account. The UI has a local fallback icon.
-        Some(skin) => fetch_avatar(client, &skin.url).await.ok(),
-        None => None,
+    let profile = match request_minecraft_profile(client, &minecraft.access_token).await? {
+        MinecraftProfileResponse::Valid(profile) => profile,
+        MinecraftProfileResponse::InvalidToken => {
+            return Err(MicrosoftError::InvalidMinecraftToken);
+        }
     };
-    let uuid = Uuid::parse_str(&profile.id)
-        .map_err(|_| MicrosoftError::InvalidResponse("Minecraft profile UUID"))?;
+    let avatar_rgba = fetch_profile_avatar(client, &profile).await;
+    let uuid = profile_uuid(&profile)?;
     Ok(OfflineAccount {
         username: profile.name,
         uuid,
@@ -354,11 +382,65 @@ async fn account_from_oauth(
     })
 }
 
-async fn fetch_avatar(client: &Client, value: &str) -> Result<Vec<u8>, MicrosoftError> {
-    let url = Url::parse(value).map_err(|_| MicrosoftError::UntrustedSkinUrl)?;
-    if url.scheme() != "https" || url.host_str() != Some("textures.minecraft.net") {
-        return Err(MicrosoftError::UntrustedSkinUrl);
+enum MinecraftProfileResponse {
+    Valid(MinecraftProfile),
+    InvalidToken,
+}
+
+async fn request_minecraft_profile(
+    client: &Client,
+    access_token: &str,
+) -> Result<MinecraftProfileResponse, MicrosoftError> {
+    let response = client
+        .get(PROFILE_ENDPOINT)
+        .bearer_auth(access_token)
+        .send()
+        .await?;
+    match response.status() {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            Ok(MinecraftProfileResponse::InvalidToken)
+        }
+        StatusCode::NOT_FOUND => Err(MicrosoftError::NoMinecraftProfile),
+        _ => decode_json(response)
+            .await
+            .map(MinecraftProfileResponse::Valid),
     }
+}
+
+async fn fetch_profile_avatar(client: &Client, profile: &MinecraftProfile) -> Option<Vec<u8>> {
+    let skin = profile
+        .skins
+        .iter()
+        .find(|skin| skin.state.eq_ignore_ascii_case("ACTIVE"))
+        .or_else(|| profile.skins.first())?;
+
+    // A transient texture-CDN failure must not invalidate an otherwise authenticated account.
+    fetch_avatar(client, &skin.url).await.ok()
+}
+
+fn account_with_profile(
+    account: &OfflineAccount,
+    profile: MinecraftProfile,
+    avatar_rgba: Option<Vec<u8>>,
+) -> Result<Option<OfflineAccount>, MicrosoftError> {
+    if profile_uuid(&profile)? != account.uuid {
+        return Ok(None);
+    }
+    let mut validated = account.clone();
+    validated.username = profile.name;
+    if avatar_rgba.is_some() {
+        validated.avatar_rgba = avatar_rgba;
+    }
+    Ok(Some(validated))
+}
+
+fn profile_uuid(profile: &MinecraftProfile) -> Result<Uuid, MicrosoftError> {
+    Uuid::parse_str(&profile.id)
+        .map_err(|_| MicrosoftError::InvalidResponse("Minecraft profile UUID"))
+}
+
+async fn fetch_avatar(client: &Client, value: &str) -> Result<Vec<u8>, MicrosoftError> {
+    let url = trusted_skin_url(value)?;
     let bytes = client
         .get(url)
         .send()
@@ -370,7 +452,25 @@ async fn fetch_avatar(client: &Client, value: &str) -> Result<Vec<u8>, Microsoft
     render_avatar(&skin).ok_or(MicrosoftError::InvalidResponse("Minecraft skin dimensions"))
 }
 
+fn trusted_skin_url(value: &str) -> Result<Url, MicrosoftError> {
+    let mut url = Url::parse(value).map_err(|_| MicrosoftError::UntrustedSkinUrl)?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str() != Some("textures.minecraft.net")
+        || url.port().is_some()
+        || url.username() != ""
+        || url.password().is_some()
+    {
+        return Err(MicrosoftError::UntrustedSkinUrl);
+    }
+    url.set_scheme("https")
+        .map_err(|_| MicrosoftError::UntrustedSkinUrl)?;
+    Ok(url)
+}
+
 fn render_avatar(skin: &RgbaImage) -> Option<Vec<u8>> {
+    const AVATAR_SIZE: u32 = 64;
+    const FACE_MARGIN: u32 = 4;
+
     let scale = skin.width() / 64;
     if scale == 0 || skin.height() < 16 * scale {
         return None;
@@ -379,8 +479,16 @@ fn render_avatar(skin: &RgbaImage) -> Option<Vec<u8>> {
         image::imageops::crop_imm(skin, 8 * scale, 8 * scale, 8 * scale, 8 * scale).to_image();
     let hat =
         image::imageops::crop_imm(skin, 40 * scale, 8 * scale, 8 * scale, 8 * scale).to_image();
-    let mut avatar = image::imageops::resize(&face, 64, 64, FilterType::Nearest);
-    let hat = image::imageops::resize(&hat, 64, 64, FilterType::Nearest);
+    let face_size = AVATAR_SIZE - 2 * FACE_MARGIN;
+    let face = image::imageops::resize(&face, face_size, face_size, FilterType::Nearest);
+    let hat = image::imageops::resize(&hat, AVATAR_SIZE, AVATAR_SIZE, FilterType::Nearest);
+    let mut avatar = RgbaImage::new(AVATAR_SIZE, AVATAR_SIZE);
+    image::imageops::overlay(
+        &mut avatar,
+        &face,
+        i64::from(FACE_MARGIN),
+        i64::from(FACE_MARGIN),
+    );
     image::imageops::overlay(&mut avatar, &hat, 0, 0);
     Some(avatar.into_raw())
 }
@@ -447,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_face_and_hat_from_a_standard_skin() {
+    fn avatar_insets_the_face_and_allows_hat_pixels_outside_its_bounds() {
         let mut skin = RgbaImage::new(64, 64);
         for y in 8..16 {
             for x in 8..16 {
@@ -458,6 +566,82 @@ mod tests {
         let avatar = render_avatar(&skin).unwrap();
         assert_eq!(avatar.len(), 64 * 64 * 4);
         assert_eq!(&avatar[..4], &[200, 100, 50, 255]);
-        assert_eq!(&avatar[(63 * 4)..(64 * 4)], &[10, 20, 30, 255]);
+        assert_eq!(
+            &avatar[((8 * 64 + 8) * 4)..((8 * 64 + 8) * 4 + 4)],
+            &[10, 20, 30, 255]
+        );
+        assert_eq!(&avatar[((63 * 64 + 63) * 4)..], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn official_http_skin_url_is_upgraded_to_https() {
+        let url = trusted_skin_url("http://textures.minecraft.net/texture/abc").unwrap();
+
+        assert_eq!(url.as_str(), "https://textures.minecraft.net/texture/abc");
+    }
+
+    #[test]
+    fn lookalike_or_authenticated_skin_hosts_are_rejected() {
+        assert!(trusted_skin_url("https://textures.minecraft.net.evil.test/texture/abc").is_err());
+        assert!(trusted_skin_url("https://user@textures.minecraft.net/texture/abc").is_err());
+    }
+
+    #[test]
+    fn validated_profile_updates_name_and_avatar() {
+        let account = microsoft_account("Before");
+        let avatar = vec![7; 64 * 64 * 4];
+        let profile = profile(account.uuid, "After");
+
+        let validated = account_with_profile(&account, profile, Some(avatar.clone()))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(validated.username, "After");
+        assert_eq!(validated.avatar_rgba, Some(avatar));
+    }
+
+    #[test]
+    fn validated_profile_preserves_cached_avatar_when_download_fails() {
+        let mut account = microsoft_account("Before");
+        account.avatar_rgba = Some(vec![3; 64 * 64 * 4]);
+        let profile = profile(account.uuid, "After");
+
+        let validated = account_with_profile(&account, profile, None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(validated.username, "After");
+        assert_eq!(validated.avatar_rgba, account.avatar_rgba);
+    }
+
+    #[test]
+    fn validated_profile_rejects_a_different_uuid() {
+        let account = microsoft_account("Player");
+
+        let validated =
+            account_with_profile(&account, profile(Uuid::new_v4(), "SomeoneElse"), None).unwrap();
+
+        assert!(validated.is_none());
+    }
+
+    fn microsoft_account(username: &str) -> OfflineAccount {
+        OfflineAccount {
+            username: username.into(),
+            uuid: Uuid::new_v4(),
+            provider: AccountProvider::Microsoft,
+            access_token: Some("access-token".into()),
+            refresh_token: Some("refresh-token".into()),
+            token_expires_at: Some(u64::MAX),
+            xuid: Some("xuid".into()),
+            avatar_rgba: None,
+        }
+    }
+
+    fn profile(uuid: Uuid, name: &str) -> MinecraftProfile {
+        MinecraftProfile {
+            id: uuid.simple().to_string(),
+            name: name.into(),
+            skins: Vec::new(),
+        }
     }
 }

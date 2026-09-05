@@ -4,14 +4,15 @@ use crate::{
     services::auth::microsoft,
     theme,
 };
-use iced::widget::{
-    Space, button, column, container, image as iced_image, row, scrollable, text, text_input,
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+use iced::{Alignment, Element, Fill};
+
+use super::components::{
+    account_avatar,
+    icons::{self, WindowControl},
 };
-use iced::{Alignment, Element, Fill, Length};
 
-use super::icons::{self, WindowControl};
-
-pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
+pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     let header = row![
         column![
             text("PLAYER ACCOUNTS").size(31),
@@ -63,7 +64,11 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
     let mut list = column![].spacing(9);
     for account in &app.persisted.accounts {
         let selected = app.persisted.selected_account == Some(account.uuid);
-        list = list.push(account_row(account, selected));
+        let refreshing = app
+            .microsoft_login
+            .refreshing_accounts
+            .contains(&account.uuid);
+        list = list.push(account_row(account, selected, refreshing));
     }
     if app.persisted.accounts.is_empty() {
         list = list.push(
@@ -212,7 +217,40 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
         .into()
 }
 
-fn account_row(account: &OfflineAccount, selected: bool) -> Element<'_, Message> {
+fn account_row(account: &OfflineAccount, selected: bool, refreshing: bool) -> Element<'_, Message> {
+    let mut actions = row![
+        text(if selected { "ACTIVE" } else { "STANDBY" })
+            .font(theme::BODY_BOLD)
+            .size(11)
+            .color(if selected {
+                theme::SUCCESS
+            } else {
+                theme::MUTED
+            }),
+        button(text(if selected { "SELECTED" } else { "USE" }).size(12))
+            .on_press(Message::SelectAccount(account.uuid))
+            .padding([8, 13])
+            .style(if selected {
+                theme::primary_button
+            } else {
+                theme::ghost_button
+            })
+    ]
+    .spacing(11)
+    .align_y(Alignment::Center);
+    if account.provider == AccountProvider::Microsoft {
+        let refresh = account_refresh_button(account.uuid, refreshing);
+        actions = actions.push(refresh);
+    }
+    actions = actions.push(
+        button(icons::window_control(WindowControl::Close))
+            .on_press(Message::DeleteAccount(account.uuid))
+            .width(38)
+            .height(38)
+            .padding(0)
+            .style(theme::danger_window_button),
+    );
+
     container(
         row![
             account_avatar(account, selected, 44.0),
@@ -237,28 +275,7 @@ fn account_row(account: &OfflineAccount, selected: bool) -> Element<'_, Message>
             ]
             .spacing(3),
             Space::new().width(Fill),
-            text(if selected { "ACTIVE" } else { "STANDBY" })
-                .font(theme::BODY_BOLD)
-                .size(11)
-                .color(if selected {
-                    theme::SUCCESS
-                } else {
-                    theme::MUTED
-                }),
-            button(text(if selected { "SELECTED" } else { "USE" }).size(12))
-                .on_press(Message::SelectAccount(account.uuid))
-                .padding([8, 13])
-                .style(if selected {
-                    theme::primary_button
-                } else {
-                    theme::ghost_button
-                }),
-            button(icons::window_control(WindowControl::Close))
-                .on_press(Message::DeleteAccount(account.uuid))
-                .width(38)
-                .height(38)
-                .padding(0)
-                .style(theme::danger_window_button)
+            actions
         ]
         .spacing(11)
         .align_y(Alignment::Center),
@@ -273,35 +290,23 @@ fn account_row(account: &OfflineAccount, selected: bool) -> Element<'_, Message>
     .into()
 }
 
-pub(crate) fn account_avatar<'a>(
-    account: &'a OfflineAccount,
-    selected: bool,
-    size: f32,
-) -> Element<'a, Message> {
-    if let Some(bytes) = account
-        .avatar_rgba
-        .as_ref()
-        .filter(|bytes| bytes.len() == 64 * 64 * 4)
-    {
-        return container(
-            iced_image(iced_image::Handle::from_rgba(64, 64, bytes.clone()))
-                .width(Length::Fixed(size))
-                .height(Length::Fixed(size)),
-        )
-        .width(size)
-        .height(size)
-        .into();
-    }
-
-    container(text("@").size(size * 0.52).color(if selected {
-        theme::LAVENDER_SOFT
+fn account_refresh_button(
+    account_id: uuid::Uuid,
+    refreshing: bool,
+) -> iced::widget::Button<'static, Message> {
+    let button = button(
+        text(if refreshing {
+            "REFRESHING…"
+        } else {
+            "REFRESH"
+        })
+        .size(12),
+    )
+    .padding([8, 13])
+    .style(theme::ghost_button);
+    if refreshing {
+        button
     } else {
-        theme::LAVENDER
-    }))
-    .width(size)
-    .height(size)
-    .align_x(iced::alignment::Horizontal::Center)
-    .align_y(iced::alignment::Vertical::Center)
-    .style(if selected { theme::pill } else { theme::inset })
-    .into()
+        button.on_press(Message::RefreshMicrosoftAccount(account_id))
+    }
 }

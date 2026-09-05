@@ -1,10 +1,7 @@
 //! Modpack browser state and install-task orchestration.
 
 use super::{InstallAttempt, InstallJob, prepare_modpack_install_log};
-use crate::app::{
-    Launcher, Message,
-    navigation::{InstanceTab, Route},
-};
+use crate::app::{Launcher, Message, navigation::Route};
 use crate::{
     domain::{
         InstallProgress, InstallRequest, InstanceColor, LoaderKind, LoaderSpec, ModpackInstallSpec,
@@ -180,9 +177,7 @@ impl Launcher {
                 active: true,
             },
         );
-        self.selected = Some(id);
-        self.route = Route::Instances;
-        self.instance_tab = InstanceTab::Overview;
+        self.route = Route::Installation(id);
         Task::none()
     }
 }

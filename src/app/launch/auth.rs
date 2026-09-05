@@ -1,7 +1,10 @@
 //! Microsoft verification for the account attached to a pending game launch.
 
 use crate::{
-    app::{Launcher, Message},
+    app::{
+        Launcher, Message,
+        accounts::{apply_replacement_refresh_token, replace_microsoft_account},
+    },
     domain::{AccountProvider, Instance, OfflineAccount},
     services::auth::microsoft,
 };
@@ -15,11 +18,18 @@ pub(crate) struct LaunchAuthCheck {
     pub(crate) account_id: Uuid,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LaunchAuthPhase {
+    Validating,
+    Refreshing,
+}
+
 #[derive(Debug)]
 pub(crate) struct PendingLaunch {
     pub(crate) check: LaunchAuthCheck,
     pub(crate) instance: Instance,
     pub(crate) username: String,
+    pub(crate) phase: LaunchAuthPhase,
 }
 
 #[derive(Debug, Default)]
@@ -70,8 +80,19 @@ impl LaunchAuthentication {
             check,
             instance,
             username: account.username.clone(),
+            phase: LaunchAuthPhase::Validating,
         });
         Some(check)
+    }
+
+    pub(crate) fn mark_refreshing(&mut self, check: LaunchAuthCheck) -> bool {
+        match &mut self.state {
+            LaunchAuthState::Checking(launch) if launch.check == check => {
+                launch.phase = LaunchAuthPhase::Refreshing;
+                true
+            }
+            _ => false,
+        }
     }
 
     pub(crate) fn is_checking(&self, check: LaunchAuthCheck) -> bool {
@@ -100,6 +121,7 @@ impl LaunchAuthentication {
         match state {
             LaunchAuthState::Failed { mut launch, .. } => {
                 launch.check.id = Uuid::new_v4();
+                launch.phase = LaunchAuthPhase::Validating;
                 let check = launch.check;
                 self.state = LaunchAuthState::Checking(launch);
                 Some(check)
@@ -144,35 +166,71 @@ impl Launcher {
         let Some(check) = self.launch_auth.retry() else {
             return Task::none();
         };
-        let Some(account) = self
-            .persisted
-            .accounts
-            .iter()
-            .find(|account| {
-                account.uuid == check.account_id && account.provider == AccountProvider::Microsoft
-            })
-            .cloned()
-        else {
+        let Some(account) = self.saved_microsoft_account(check) else {
             self.launch_auth.fail(
                 check,
                 "The Microsoft account selected for this launch no longer exists.".into(),
             );
             return Task::none();
         };
-        Self::check_microsoft_account_for_launch(check, account)
+        Self::validate_microsoft_account_for_launch(check, account)
     }
 
-    pub(super) fn check_microsoft_account_for_launch(
+    pub(super) fn validate_microsoft_account_for_launch(
         check: LaunchAuthCheck,
         account: OfflineAccount,
     ) -> Task<Message> {
         Task::perform(
-            async move { microsoft::refresh_account(&account).await },
-            move |result| Message::LaunchMicrosoftAccountChecked(check, result),
+            async move {
+                microsoft::validate_minecraft_token(&account)
+                    .await
+                    .map_err(|error| error.to_string())
+            },
+            move |result| Message::LaunchMicrosoftTokenValidated(check, result),
         )
     }
 
-    pub(in crate::app) fn finish_launch_authentication(
+    pub(in crate::app) fn finish_launch_token_validation(
+        &mut self,
+        check: LaunchAuthCheck,
+        result: Result<microsoft::MinecraftTokenValidation, String>,
+    ) -> Task<Message> {
+        if !self.launch_auth.is_checking(check) {
+            return Task::none();
+        }
+        match result {
+            Ok(microsoft::MinecraftTokenValidation::Valid(account)) => {
+                self.complete_launch_authentication(check, account);
+                Task::none()
+            }
+            Ok(microsoft::MinecraftTokenValidation::Invalid) => {
+                self.refresh_microsoft_account_for_launch(check)
+            }
+            Err(message) => {
+                self.launch_auth.fail(check, message);
+                Task::none()
+            }
+        }
+    }
+
+    fn refresh_microsoft_account_for_launch(&mut self, check: LaunchAuthCheck) -> Task<Message> {
+        if !self.launch_auth.mark_refreshing(check) {
+            return Task::none();
+        }
+        let Some(account) = self.saved_microsoft_account(check) else {
+            self.launch_auth.fail(
+                check,
+                "The Microsoft account selected for this launch no longer exists.".into(),
+            );
+            return Task::none();
+        };
+        Task::perform(
+            async move { microsoft::refresh_account(&account).await },
+            move |result| Message::LaunchMicrosoftAccountRefreshed(check, result),
+        )
+    }
+
+    pub(in crate::app) fn finish_launch_account_refresh(
         &mut self,
         check: LaunchAuthCheck,
         result: Result<OfflineAccount, microsoft::AccountRefreshError>,
@@ -181,13 +239,7 @@ impl Launcher {
             return;
         }
         let refreshed = match result {
-            Ok(account) => match validate_refreshed_account(check.account_id, account) {
-                Ok(account) => account,
-                Err(message) => {
-                    self.launch_auth.fail(check, message);
-                    return;
-                }
-            },
+            Ok(account) => account,
             Err(error) => {
                 let (mut message, replacement_refresh_token) = error.into_parts();
                 if let Some(refresh_token) = replacement_refresh_token
@@ -208,8 +260,19 @@ impl Launcher {
                 return;
             }
         };
-        let launch_account = refreshed.clone();
-        if !apply_refreshed_account(&mut self.persisted.accounts, refreshed) {
+        self.complete_launch_authentication(check, refreshed);
+    }
+
+    fn complete_launch_authentication(&mut self, check: LaunchAuthCheck, account: OfflineAccount) {
+        let verified = match validate_refreshed_account(check.account_id, account) {
+            Ok(account) => account,
+            Err(message) => {
+                self.launch_auth.fail(check, message);
+                return;
+            }
+        };
+        let launch_account = verified.clone();
+        if !replace_microsoft_account(&mut self.persisted.accounts, verified) {
             self.launch_auth.fail(
                 check,
                 "The saved Microsoft profile no longer exists.".into(),
@@ -229,6 +292,16 @@ impl Launcher {
         };
         self.start_instance_launch(instance, launch_account);
     }
+
+    fn saved_microsoft_account(&self, check: LaunchAuthCheck) -> Option<OfflineAccount> {
+        self.persisted
+            .accounts
+            .iter()
+            .find(|account| {
+                account.uuid == check.account_id && account.provider == AccountProvider::Microsoft
+            })
+            .cloned()
+    }
 }
 
 fn validate_refreshed_account(
@@ -240,30 +313,6 @@ fn validate_refreshed_account(
     } else {
         Err("Microsoft returned a different Minecraft profile.".into())
     }
-}
-
-fn apply_refreshed_account(accounts: &mut [OfflineAccount], refreshed: OfflineAccount) -> bool {
-    let Some(stored) = accounts.iter_mut().find(|account| {
-        account.provider == AccountProvider::Microsoft && account.uuid == refreshed.uuid
-    }) else {
-        return false;
-    };
-    *stored = refreshed;
-    true
-}
-
-fn apply_replacement_refresh_token(
-    accounts: &mut [OfflineAccount],
-    account_id: Uuid,
-    refresh_token: String,
-) -> bool {
-    let Some(stored) = accounts.iter_mut().find(|account| {
-        account.provider == AccountProvider::Microsoft && account.uuid == account_id
-    }) else {
-        return false;
-    };
-    stored.refresh_token = Some(refresh_token);
-    true
 }
 
 #[cfg(test)]
@@ -296,8 +345,39 @@ mod tests {
                     LaunchAuthState::Checking(launch)
                         if launch.username == "Selected"
                             && launch.instance.name == "Selected instance"
+                            && launch.phase == LaunchAuthPhase::Validating
                 )
         );
+    }
+
+    #[test]
+    fn invalid_token_moves_the_current_check_to_refreshing() {
+        let mut authentication = LaunchAuthentication::default();
+        let account = microsoft_account("Player");
+        let check = authentication.begin(instance("Game"), &account).unwrap();
+
+        assert!(authentication.mark_refreshing(check));
+        assert!(matches!(
+            authentication.state(),
+            LaunchAuthState::Checking(launch)
+                if launch.check == check && launch.phase == LaunchAuthPhase::Refreshing
+        ));
+    }
+
+    #[test]
+    fn stale_check_cannot_change_the_current_phase() {
+        let mut authentication = LaunchAuthentication::default();
+        let account = microsoft_account("Player");
+        let stale = authentication.begin(instance("Game"), &account).unwrap();
+        authentication.fail(stale, "expired".into());
+        let current = authentication.retry().unwrap();
+
+        assert!(!authentication.mark_refreshing(stale));
+        assert!(matches!(
+            authentication.state(),
+            LaunchAuthState::Checking(launch)
+                if launch.check == current && launch.phase == LaunchAuthPhase::Validating
+        ));
     }
 
     #[test]
@@ -369,6 +449,7 @@ mod tests {
                     authentication.state(),
                     LaunchAuthState::Checking(launch)
                         if launch.instance.name == "Original instance"
+                            && launch.phase == LaunchAuthPhase::Validating
                 )
         );
     }
@@ -423,50 +504,6 @@ mod tests {
         authentication.invalidate(account.uuid);
 
         assert!(authentication.needs_verification(&account));
-    }
-
-    #[test]
-    fn applying_a_refreshed_account_preserves_account_order() {
-        let offline = OfflineAccount::new("Offline");
-        let original = microsoft_account("Before");
-        let mut refreshed = original.clone();
-        refreshed.username = "After".into();
-        refreshed.access_token = Some("new-access-token".into());
-        let mut accounts = vec![offline.clone(), original];
-
-        apply_refreshed_account(&mut accounts, refreshed.clone());
-
-        assert_eq!(
-            accounts
-                .iter()
-                .map(|account| (
-                    account.uuid,
-                    account.username.as_str(),
-                    account.access_token.as_deref()
-                ))
-                .collect::<Vec<_>>(),
-            vec![
-                (offline.uuid, "Offline", None),
-                (refreshed.uuid, "After", refreshed.access_token.as_deref())
-            ]
-        );
-    }
-
-    #[test]
-    fn replacement_refresh_tokens_are_updated_without_moving_the_profile() {
-        let offline = OfflineAccount::new("Offline");
-        let microsoft = microsoft_account("Microsoft");
-        let mut accounts = vec![offline.clone(), microsoft.clone()];
-
-        apply_replacement_refresh_token(&mut accounts, microsoft.uuid, "rotated".into());
-
-        assert_eq!(
-            accounts
-                .iter()
-                .map(|account| (account.uuid, account.refresh_token.as_deref()))
-                .collect::<Vec<_>>(),
-            vec![(offline.uuid, None), (microsoft.uuid, Some("rotated"))]
-        );
     }
 
     #[test]

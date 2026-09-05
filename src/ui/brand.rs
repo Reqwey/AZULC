@@ -15,7 +15,7 @@ const GIRL_SOURCE: &[u8] = include_bytes!("../../assets/brand/girl-source.png");
 static SILHOUETTE: OnceLock<iced_image::Handle> = OnceLock::new();
 
 /// Builds the taskbar/window icon from the supplied silhouette source.
-pub fn window_icon() -> Option<iced::window::Icon> {
+pub(crate) fn window_icon() -> Option<iced::window::Icon> {
     let icon = window_icon_image()?;
     iced::window::icon::from_rgba(icon.into_raw(), ICON_SIZE as u32, ICON_SIZE as u32).ok()
 }
@@ -52,7 +52,7 @@ fn inside_regular_hexagon(x: f32, y: f32, center: f32, radius: f32) -> bool {
 }
 
 /// Builds the large AZULC wordmark and exact supplied-avatar silhouette lockup.
-pub fn view<'a, Message>() -> Element<'a, Message>
+pub(super) fn view<'a, Message>() -> Element<'a, Message>
 where
     Message: 'a,
 {

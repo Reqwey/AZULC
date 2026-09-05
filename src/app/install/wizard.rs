@@ -3,7 +3,7 @@
 use super::{InstallAttempt, InstallJob};
 use crate::app::{
     Launcher, Message,
-    navigation::{InstanceTab, Route, VersionFilter, WizardStep},
+    navigation::{Route, VersionFilter, WizardStep},
 };
 use crate::{
     domain::{InstallProgress, InstallRequest, InstanceColor, LoaderKind, LoaderSpec},
@@ -159,9 +159,7 @@ impl Launcher {
             },
         );
         self.reset_wizard();
-        self.selected = Some(id);
-        self.route = Route::Instances;
-        self.instance_tab = InstanceTab::Overview;
+        self.route = Route::Installation(id);
         Task::none()
     }
 

@@ -2,6 +2,7 @@
 
 use super::{
     Launcher, Message,
+    accounts::apply_microsoft_account_appearance,
     install::WizardDraft,
     navigation::{ModpackTab, NewInstanceTab, Route, VersionFilter, WizardStep},
 };
@@ -21,12 +22,7 @@ use std::sync::{
 impl Launcher {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Navigate(route) => {
-                self.route = route;
-                if route == Route::Instances {
-                    return self.load_selected_content();
-                }
-            }
+            Message::Navigate(route) => return self.navigate(route),
             Message::WindowOpened(id) => {
                 self.window_id = Some(id);
                 return window::is_maximized(id).map(Message::WindowMaximizedChanged);
@@ -142,11 +138,41 @@ impl Launcher {
                 self.microsoft_login.verification_url.clear();
                 self.microsoft_login.status = "Microsoft sign-in cancelled.".into();
             }
-            Message::LaunchMicrosoftAccountChecked(check, result) => {
-                self.finish_launch_authentication(check, result);
+            Message::RefreshMicrosoftAccount(account_id) => {
+                return self.refresh_microsoft_account(account_id);
+            }
+            Message::MicrosoftAccountRefreshed(account_id, result) => {
+                self.finish_microsoft_account_refresh(account_id, result);
+            }
+            Message::MicrosoftAccountAppearanceLoaded(account_id, result) => {
+                if let Ok(microsoft::MinecraftTokenValidation::Valid(profile)) = result
+                    && apply_microsoft_account_appearance(
+                        &mut self.persisted.accounts,
+                        account_id,
+                        profile,
+                    )
+                {
+                    self.persisted.account = self.persisted.active_account().cloned();
+                    self.save();
+                }
+            }
+            Message::LaunchMicrosoftTokenValidated(check, result) => {
+                return self.finish_launch_token_validation(check, result);
+            }
+            Message::LaunchMicrosoftAccountRefreshed(check, result) => {
+                self.finish_launch_account_refresh(check, result);
             }
             Message::RetryLaunchAuthentication => {
                 return self.retry_launch_authentication();
+            }
+            Message::ReauthenticateLaunchAccount => {
+                if self.launch_auth.cancel_failed_launch() {
+                    self.route = Route::Accounts;
+                    self.notice = Some(
+                        "Sign in with Microsoft again, then launch the instance once more.".into(),
+                    );
+                    return self.begin_microsoft_login();
+                }
             }
             Message::CancelLaunchAuthentication => {
                 if self.launch_auth.cancel_failed_launch() {
@@ -167,6 +193,7 @@ impl Launcher {
                 }
             }
             Message::DeleteAccount(id) => {
+                self.microsoft_login.refreshing_accounts.remove(&id);
                 self.persisted.accounts.retain(|account| account.uuid != id);
                 self.launch_auth.invalidate(id);
                 if self.persisted.selected_account == Some(id) {
@@ -312,8 +339,14 @@ impl Launcher {
                 Err(error) => self.notice = Some(error),
             },
             Message::PingsLoaded(pings) => self.pings = pings,
-            Message::ContentLoaded(id, kind, result) => {
-                if self.selected == Some(id) && self.instance_tab.content_kind() == Some(kind) {
+            Message::ContentLoaded(request_id, id, kind, result) => {
+                if is_current_content_request(
+                    self.route,
+                    self.content_request_id,
+                    request_id,
+                    id,
+                    kind,
+                ) {
                     self.content_loading = false;
                     self.content_scope = Some((id, kind));
                     match result {
@@ -327,7 +360,9 @@ impl Launcher {
                                 return Task::perform(
                                     content::load_thumbnails(kind, jobs),
                                     move |results| {
-                                        Message::ContentThumbnailsLoaded(id, kind, results)
+                                        Message::ContentThumbnailsLoaded(
+                                            request_id, id, kind, results,
+                                        )
                                     },
                                 );
                             }
@@ -340,8 +375,15 @@ impl Launcher {
                 }
             }
             Message::ContentQueryChanged(query) => self.content_query = query,
-            Message::ContentThumbnailsLoaded(id, kind, results) => {
-                if self.selected == Some(id) && self.content_scope == Some((id, kind)) {
+            Message::ContentThumbnailsLoaded(request_id, id, kind, results) => {
+                if is_current_content_request(
+                    self.route,
+                    self.content_request_id,
+                    request_id,
+                    id,
+                    kind,
+                ) && self.content_scope == Some((id, kind))
+                {
                     for (path, thumbnail) in results {
                         if let Some(thumbnail) = thumbnail {
                             self.thumbnails.insert(
@@ -370,7 +412,9 @@ impl Launcher {
                     }
                 }
             }
-            Message::OpenResourceBrowser(kind) => return self.open_resource_browser(kind),
+            Message::OpenResourceBrowser(id, kind) => {
+                return self.open_resource_browser(id, kind);
+            }
             Message::CloseResourceBrowser => self.resource_browser = None,
             Message::ResourceQueryChanged(value) => {
                 if let Some(browser) = self.resource_browser.as_mut() {
@@ -443,6 +487,8 @@ impl Launcher {
             }
             Message::ResourceFilePicked(file) => return self.download_resource(file),
             Message::ResourceDownloaded(modal_id, instance_id, kind, result) => {
+                self.active_resource_downloads
+                    .remove(&(modal_id, instance_id));
                 if let Some(browser) = self.resource_browser.as_mut()
                     && browser.id == modal_id
                 {
@@ -466,10 +512,14 @@ impl Launcher {
                     self.notice = Some(error.clone());
                 }
                 if result.is_ok()
-                    && self.selected == Some(instance_id)
-                    && self.instance_tab.content_kind() == Some(kind)
+                    && let Route::Instance { id, tab } = self.route
+                    && id == instance_id
+                    && tab.content_kind() == Some(kind)
                 {
-                    return Task::batch([self.load_selected_content(), self.refresh_insights()]);
+                    return Task::batch([
+                        self.load_instance_content(id, tab),
+                        self.refresh_insights(),
+                    ]);
                 }
             }
             Message::ModpackQueryChanged(value) => self.modpacks.query = value,
@@ -582,61 +632,51 @@ impl Launcher {
                 }
             }
             Message::InstanceVersionFilesRepaired => {}
-            Message::SelectInstance(id) => {
-                self.selected = Some(id);
-                self.route = Route::Instances;
-                self.content_query.clear();
-                return self.load_selected_content();
+            Message::EditInstanceName(id, value) => {
+                self.edit_instance(id, |instance| instance.name = value)
             }
-            Message::SelectInstanceTab(tab) => {
-                self.instance_tab = tab;
-                return self.load_selected_content();
+            Message::EditInstanceDescription(id, value) => {
+                self.edit_instance(id, |instance| instance.description = value)
             }
-            Message::EditInstanceName(value) => {
-                self.edit_instance(|instance| instance.name = value)
+            Message::EditInstanceColor(id, value) => {
+                self.edit_instance(id, |instance| instance.color = value)
             }
-            Message::EditInstanceDescription(value) => {
-                self.edit_instance(|instance| instance.description = value)
+            Message::ToggleInstanceFavorite(id, value) => {
+                self.edit_instance(id, |instance| instance.favorite = value)
             }
-            Message::EditInstanceColor(value) => {
-                self.edit_instance(|instance| instance.color = value)
+            Message::SetInstanceIsolation(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.isolated = value)
             }
-            Message::ToggleInstanceFavorite(value) => {
-                self.edit_instance(|instance| instance.favorite = value)
+            Message::SetInstanceAutoJava(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.auto_java = value)
             }
-            Message::SetInstanceIsolation(value) => {
-                self.edit_instance(|instance| instance.settings.isolated = value)
-            }
-            Message::SetInstanceAutoJava(value) => {
-                self.edit_instance(|instance| instance.settings.auto_java = value)
-            }
-            Message::SetInstanceJava(path) => self.edit_instance(|instance| {
+            Message::SetInstanceJava(id, path) => self.edit_instance(id, |instance| {
                 instance.settings.auto_java = false;
                 instance.settings.java_path = Some(path);
             }),
-            Message::SetInstanceWidth(value) => {
-                self.edit_instance(|instance| instance.settings.width = value)
+            Message::SetInstanceWidth(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.width = value)
             }
-            Message::SetInstanceHeight(value) => {
-                self.edit_instance(|instance| instance.settings.height = value)
+            Message::SetInstanceHeight(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.height = value)
             }
-            Message::SetInstanceFullscreen(value) => {
-                self.edit_instance(|instance| instance.settings.fullscreen = value)
+            Message::SetInstanceFullscreen(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.fullscreen = value)
             }
-            Message::SetInstanceAutoMemory(value) => {
-                self.edit_instance(|instance| instance.settings.auto_memory = value)
+            Message::SetInstanceAutoMemory(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.auto_memory = value)
             }
-            Message::SetInstanceMemory(value) => {
+            Message::SetInstanceMemory(id, value) => {
                 let limit = self.system_resources.memory_limit_mb();
-                self.edit_instance(|instance| {
+                self.edit_instance(id, |instance| {
                     instance.settings.max_memory_mb = value.clamp(512, limit)
                 })
             }
-            Message::SetInstanceWindowTitle(value) => {
-                self.edit_instance(|instance| instance.settings.custom_window_title = value)
+            Message::SetInstanceWindowTitle(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.custom_window_title = value)
             }
-            Message::SetInstanceCustomInfo(value) => {
-                self.edit_instance(|instance| instance.settings.custom_info = value)
+            Message::SetInstanceCustomInfo(id, value) => {
+                self.edit_instance(id, |instance| instance.settings.custom_info = value)
             }
             Message::OpenPath(path) => {
                 return Task::perform(
@@ -698,6 +738,11 @@ impl Launcher {
                     self.notice = Some(format!(
                         "{name} is still running. Exit Minecraft before deleting its files."
                     ));
+                } else if self.is_resource_download_active(id) {
+                    self.notice = Some(
+                        "Content is still being installed into this instance. Wait for it to finish before deleting the instance."
+                            .into(),
+                    );
                 } else if self.deleting_instances.contains(&id) {
                     self.notice = Some("This instance is already being deleted.".into());
                 } else if self
@@ -709,16 +754,36 @@ impl Launcher {
                     self.pending_delete = Some(id);
                 }
             }
-            Message::CancelDeleteInstance => self.pending_delete = None,
-            Message::ConfirmDeleteInstance => {
-                if let Some(id) = self.pending_delete.take() {
+            Message::CancelDeleteInstance(id) => {
+                if self.pending_delete == Some(id) {
+                    self.pending_delete = None;
+                }
+            }
+            Message::ConfirmDeleteInstance(id) => {
+                if self.pending_delete == Some(id) {
+                    self.pending_delete = None;
                     if self.is_instance_launching(id) {
                         self.notice = Some(
                             "This instance is still running. Exit Minecraft before deleting its files."
                                 .into(),
                         );
+                    } else if self.is_resource_download_active(id) {
+                        self.notice = Some(
+                            "Content is still being installed into this instance. Wait for it to finish before deleting the instance."
+                                .into(),
+                        );
                     } else {
                         self.deleting_instances.insert(id);
+                        if self.route.target_id() == Some(id) {
+                            self.route = Route::Home;
+                        }
+                        if self
+                            .resource_browser
+                            .as_ref()
+                            .is_some_and(|browser| browser.instance_id == id)
+                        {
+                            self.resource_browser = None;
+                        }
                         return self.delete_instance(id);
                     }
                 }
@@ -727,15 +792,23 @@ impl Launcher {
                 self.deleting_instances.remove(&id);
                 match result {
                     Ok(()) => {
+                        if self
+                            .resource_browser
+                            .as_ref()
+                            .is_some_and(|browser| browser.instance_id == id)
+                        {
+                            self.resource_browser = None;
+                        }
                         self.persisted
                             .instances
                             .retain(|instance| instance.id != id);
                         self.jobs.remove(&id);
                         self.launches.remove_instance(id);
-                        if self.selected == Some(id) {
-                            self.selected =
+                        if self.last_instance_id == Some(id) {
+                            self.last_instance_id =
                                 self.persisted.instances.first().map(|instance| instance.id);
                         }
+                        self.route = self.route.after_instance_deleted(id);
                         self.save();
                         return self.refresh_insights();
                     }
@@ -781,30 +854,111 @@ impl Launcher {
                     usize::from(value).clamp(1, self.system_resources.cpu_threads.max(1));
                 self.save();
             }
-            Message::CancelInstall(id) => {
-                if let Some(job) = self.jobs.get_mut(&id) {
-                    job.active = false;
-                    job.progress.stage = InstallStage::Cancelled;
-                    job.progress.detail = "Task cancelled; verified files were kept.".into();
-                    job.logs.push("[pipeline] task cancelled by user".into());
-                    if let Some(path) = job.log_path.as_deref() {
-                        let _ = super::install::append_install_log(
-                            path,
-                            "[cancelled] Task cancelled by user",
-                        );
-                    }
-                }
-            }
-            Message::RetryInstall(id) => self.retry_install(id),
+            Message::CancelInstall(attempt) => self.cancel_install(&attempt),
+            Message::RetryInstall(attempt) => self.retry_install(attempt),
             Message::Pipeline(attempt, event) => {
                 return self.handle_pipeline(&attempt, *event);
             }
-            Message::LaunchSelected => return self.launch_selected(),
+            Message::LaunchInstance(id) => return self.launch_instance(id),
             Message::LaunchEvent(attempt, event) => {
                 return self.handle_launch_event(&attempt, event);
             }
             Message::DismissNotice => self.notice = None,
         }
         Task::none()
+    }
+
+    fn navigate(&mut self, requested: Route) -> Task<Message> {
+        if let Some(id) = requested.target_id()
+            && self.is_instance_deleting(id)
+        {
+            self.notice = Some("That instance is currently being deleted.".into());
+            return Task::none();
+        }
+        match requested {
+            Route::Instance { id, tab } => {
+                if self.instance(id).is_none() {
+                    self.route = Route::Home;
+                    self.notice = Some("That instance no longer exists.".into());
+                    return Task::none();
+                }
+                if self.route.target_id() != Some(id) {
+                    self.content_query.clear();
+                }
+                self.route = requested;
+                self.last_instance_id = Some(id);
+                self.load_instance_content(id, tab)
+            }
+            Route::Installation(id) => {
+                let installation_exists = self
+                    .jobs
+                    .get(&id)
+                    .is_some_and(|job| job.active || job.progress.stage != InstallStage::Complete);
+                if installation_exists {
+                    if self.route.target_id() != Some(id) {
+                        self.content_query.clear();
+                    }
+                    self.route = requested;
+                    Task::none()
+                } else if self.instance(id).is_some() {
+                    self.navigate(Route::instance(id))
+                } else {
+                    self.route = Route::Home;
+                    self.notice = Some("That installation no longer exists.".into());
+                    Task::none()
+                }
+            }
+            Route::Home | Route::NewInstance | Route::Accounts | Route::Settings => {
+                self.route = requested;
+                Task::none()
+            }
+        }
+    }
+}
+
+fn is_current_content_request(
+    route: Route,
+    current_request_id: u64,
+    request_id: u64,
+    instance_id: uuid::Uuid,
+    kind: content::ContentKind,
+) -> bool {
+    current_request_id == request_id
+        && route
+            .installed_instance()
+            .is_some_and(|(id, tab)| id == instance_id && tab.content_kind() == Some(kind))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_current_content_request;
+    use crate::{
+        app::navigation::{InstanceTab, Route},
+        services::content::ContentKind,
+    };
+    use uuid::Uuid;
+
+    #[test]
+    fn stale_content_generation_is_rejected_even_after_returning_to_same_tab() {
+        let id = Uuid::from_u128(42);
+        let route = Route::Instance {
+            id,
+            tab: InstanceTab::Mods,
+        };
+
+        assert!(is_current_content_request(
+            route,
+            2,
+            2,
+            id,
+            ContentKind::Mods
+        ));
+        assert!(!is_current_content_request(
+            route,
+            2,
+            1,
+            id,
+            ContentKind::Mods
+        ));
     }
 }

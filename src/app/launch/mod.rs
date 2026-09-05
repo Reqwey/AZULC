@@ -4,7 +4,7 @@ mod auth;
 mod sessions;
 
 pub(super) use auth::LaunchAuthentication;
-pub(crate) use auth::{LaunchAuthCheck, LaunchAuthState};
+pub(crate) use auth::{LaunchAuthCheck, LaunchAuthPhase, LaunchAuthState};
 pub(crate) use sessions::{LaunchAttempt, LaunchSession};
 pub(super) use sessions::{LaunchKey, LaunchRegistry};
 
@@ -19,12 +19,12 @@ use iced::Task;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 impl Launcher {
-    pub(super) fn launch_selected(&mut self) -> Task<Message> {
+    pub(super) fn launch_instance(&mut self, id: uuid::Uuid) -> Task<Message> {
         if self.launch_auth.is_blocking() {
             return Task::none();
         }
-        let Some(instance) = self.selected_instance().cloned() else {
-            self.notice = Some("Choose an instance to launch first.".into());
+        let Some(instance) = self.instance(id).cloned() else {
+            self.notice = Some("That instance no longer exists.".into());
             return Task::none();
         };
         if self.deleting_instances.contains(&instance.id) {
@@ -40,7 +40,7 @@ impl Launcher {
             let Some(check) = self.launch_auth.begin(instance, &account) else {
                 return Task::none();
             };
-            return Self::check_microsoft_account_for_launch(check, account);
+            return Self::validate_microsoft_account_for_launch(check, account);
         }
 
         self.start_instance_launch(instance, account);
@@ -177,7 +177,7 @@ impl Launcher {
                             format!("Minecraft exited before startup completed · exit code {code}")
                         };
                         notice = Some(format!(
-                            "{instance_name} exited with an error. Its launch log is shown here."
+                            "{instance_name} exited with an error. Its launch log is shown up."
                         ));
                     }
                 }
@@ -189,7 +189,7 @@ impl Launcher {
                     session.log_path = log_path;
                     session.logs.push(format!("[AZULC] {message}"));
                     notice = Some(format!(
-                        "{instance_name} failed to launch. Its detailed log is shown here."
+                        "{instance_name} failed to launch. Its detailed log is shown up."
                     ));
                 }
             }

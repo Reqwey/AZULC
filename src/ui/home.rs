@@ -9,9 +9,12 @@ use chrono::{Local, Timelike};
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill, padding};
 
-use super::{CONTENT_END_GAP, SCROLLBAR_GAP, brand};
+use super::{
+    brand,
+    components::{CONTENT_END_GAP, SCROLLBAR_GAP},
+};
 
-pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
+pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     let account = app.persisted.active_account();
     let greeting = greeting();
     let identity = account.map_or("PLAYER", |value| value.username.as_str());
@@ -94,7 +97,7 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
         .style(theme::danger_panel)
         .into()
     } else {
-        let selected = app.selected_instance();
+        let selected = app.last_instance();
         let selected_is_launching =
             selected.is_some_and(|instance| app.is_instance_launching(instance.id));
         let selected_is_deleting =
@@ -130,8 +133,9 @@ pub(crate) fn view(app: &Launcher) -> Element<'_, Message> {
                     .size(16)
                 )
                 .on_press_maybe(
-                    (selected.is_some() && !selected_is_launching && !selected_is_deleting)
-                        .then_some(Message::LaunchSelected)
+                    selected
+                        .filter(|_| !selected_is_launching && !selected_is_deleting)
+                        .map(|instance| Message::LaunchInstance(instance.id))
                 )
                 .padding([12, 24])
                 .style(theme::primary_button)

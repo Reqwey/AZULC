@@ -46,7 +46,7 @@ pub const BODY_BOLD: Font = Font {
     style: FontStyle::Normal,
 };
 
-pub fn azul() -> Theme {
+pub fn azulc() -> Theme {
     Theme::custom(
         "Violet Cartridge",
         Palette {
