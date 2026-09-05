@@ -6,9 +6,7 @@ use super::{
     navigation::{ModpackTab, NewInstanceTab, Route, SettingsTab, VersionFilter, WizardStep},
 };
 use crate::{
-    domain::{
-        DownloadSource, InstanceColor, JavaRuntime, LoaderKind, OfflineAccount, PipelineEvent,
-    },
+    domain::{Account, DownloadSource, InstanceColor, JavaRuntime, LoaderKind, PipelineEvent},
     services::{
         auth::microsoft,
         catalog::{CatalogProject, CatalogProvider, CatalogRelease},
@@ -38,15 +36,13 @@ pub enum Message {
     ToggleMaximize,
     MinimizeWindow,
     CloseWindow,
-    AccountInputChanged(String),
-    AddOfflineAccount,
     BeginMicrosoftLogin,
     MicrosoftDeviceAuthorizationLoaded(u64, Result<microsoft::DeviceAuthorization, String>),
     CopyMicrosoftLoginCode,
-    MicrosoftLoginFinished(u64, Result<OfflineAccount, String>),
+    MicrosoftLoginFinished(u64, Result<Account, String>),
     CancelMicrosoftLogin,
     RefreshMicrosoftAccount(Uuid),
-    MicrosoftAccountRefreshed(Uuid, Result<OfflineAccount, microsoft::AccountRefreshError>),
+    MicrosoftAccountRefreshed(Uuid, Result<Account, microsoft::AccountRefreshError>),
     MicrosoftAccountAppearanceLoaded(Uuid, Result<microsoft::MinecraftTokenValidation, String>),
     LaunchMicrosoftTokenValidated(
         LaunchAuthCheck,
@@ -54,7 +50,7 @@ pub enum Message {
     ),
     LaunchMicrosoftAccountRefreshed(
         LaunchAuthCheck,
-        Result<OfflineAccount, microsoft::AccountRefreshError>,
+        Result<Account, microsoft::AccountRefreshError>,
     ),
     RetryLaunchAuthentication,
     ReauthenticateLaunchAccount,

@@ -79,7 +79,7 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
             row![
                 column![
                     text("NO PLAYER PROFILE YET").size(21).color(theme::WARNING),
-                    text("Sign in with a Microsoft account to unlock licensed Minecraft launching. Offline profiles are temporary test tools.")
+                    text("Sign in with a Microsoft account to launch a licensed Minecraft Java profile.")
                         .font(theme::BODY_FONT)
                         .size(12)
                         .color(theme::MUTED)

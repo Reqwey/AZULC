@@ -1,6 +1,6 @@
 //! Microsoft device-code authentication and Minecraft profile retrieval.
 
-use crate::domain::{AccountProvider, OfflineAccount};
+use crate::domain::Account;
 use image::{RgbaImage, imageops::FilterType};
 use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
@@ -126,7 +126,7 @@ impl std::error::Error for AccountRefreshError {}
 
 #[derive(Debug, Clone)]
 pub enum MinecraftTokenValidation {
-    Valid(OfflineAccount),
+    Valid(Account),
     Invalid,
 }
 
@@ -199,7 +199,7 @@ pub async fn begin_device_authorization() -> Result<DeviceAuthorization, Microso
 pub async fn complete_device_authorization(
     authorization: DeviceAuthorization,
     cancelled: Arc<AtomicBool>,
-) -> Result<OfflineAccount, MicrosoftError> {
+) -> Result<Account, MicrosoftError> {
     let client_id = client_id()?;
     let client = http_client()?;
     let started = std::time::Instant::now();
@@ -245,16 +245,14 @@ pub async fn complete_device_authorization(
     account_from_oauth(&client, oauth).await
 }
 
-pub async fn refresh_account(
-    account: &OfflineAccount,
-) -> Result<OfflineAccount, AccountRefreshError> {
+pub async fn refresh_account(account: &Account) -> Result<Account, AccountRefreshError> {
     let client_id = client_id().map_err(AccountRefreshError::before_token_rotation)?;
-    let refresh_token = account
-        .refresh_token
-        .as_deref()
-        .filter(|token| !token.is_empty())
-        .ok_or(MicrosoftError::Expired)
-        .map_err(AccountRefreshError::before_token_rotation)?;
+    if account.refresh_token.is_empty() {
+        return Err(AccountRefreshError::before_token_rotation(
+            MicrosoftError::Expired,
+        ));
+    }
+    let refresh_token = account.refresh_token.as_str();
     let client = http_client().map_err(AccountRefreshError::before_token_rotation)?;
     let response = client
         .post(TOKEN_ENDPOINT)
@@ -285,22 +283,13 @@ pub async fn refresh_account(
 }
 
 pub async fn validate_minecraft_token(
-    account: &OfflineAccount,
+    account: &Account,
 ) -> Result<MinecraftTokenValidation, MicrosoftError> {
-    if account.provider != AccountProvider::Microsoft {
-        return Err(MicrosoftError::InvalidResponse(
-            "Microsoft account provider",
-        ));
-    }
-    let Some(access_token) = account
-        .access_token
-        .as_deref()
-        .filter(|token| !token.is_empty())
-    else {
+    if account.access_token.is_empty() {
         return Ok(MinecraftTokenValidation::Invalid);
-    };
+    }
     let client = http_client()?;
-    let profile = match request_minecraft_profile(&client, access_token).await? {
+    let profile = match request_minecraft_profile(&client, &account.access_token).await? {
         MinecraftProfileResponse::Valid(profile) => profile,
         MinecraftProfileResponse::InvalidToken => {
             return Ok(MinecraftTokenValidation::Invalid);
@@ -316,7 +305,7 @@ pub async fn validate_minecraft_token(
 async fn account_from_oauth(
     client: &Client,
     oauth: OAuthTokens,
-) -> Result<OfflineAccount, MicrosoftError> {
+) -> Result<Account, MicrosoftError> {
     let xbl: XboxToken = decode_json(
         client
             .post(XBL_ENDPOINT)
@@ -370,13 +359,12 @@ async fn account_from_oauth(
     };
     let avatar_rgba = fetch_profile_avatar(client, &profile).await;
     let uuid = profile_uuid(&profile)?;
-    Ok(OfflineAccount {
+    Ok(Account {
         username: profile.name,
         uuid,
-        provider: AccountProvider::Microsoft,
-        access_token: Some(minecraft.access_token),
-        refresh_token: Some(oauth.refresh_token),
-        token_expires_at: Some(now_unix().saturating_add(minecraft.expires_in)),
+        access_token: minecraft.access_token,
+        refresh_token: oauth.refresh_token,
+        token_expires_at: now_unix().saturating_add(minecraft.expires_in),
         xuid: (!user.xid.is_empty()).then(|| user.xid.clone()),
         avatar_rgba,
     })
@@ -419,10 +407,10 @@ async fn fetch_profile_avatar(client: &Client, profile: &MinecraftProfile) -> Op
 }
 
 fn account_with_profile(
-    account: &OfflineAccount,
+    account: &Account,
     profile: MinecraftProfile,
     avatar_rgba: Option<Vec<u8>>,
-) -> Result<Option<OfflineAccount>, MicrosoftError> {
+) -> Result<Option<Account>, MicrosoftError> {
     if profile_uuid(&profile)? != account.uuid {
         return Ok(None);
     }
@@ -624,14 +612,13 @@ mod tests {
         assert!(validated.is_none());
     }
 
-    fn microsoft_account(username: &str) -> OfflineAccount {
-        OfflineAccount {
+    fn microsoft_account(username: &str) -> Account {
+        Account {
             username: username.into(),
             uuid: Uuid::new_v4(),
-            provider: AccountProvider::Microsoft,
-            access_token: Some("access-token".into()),
-            refresh_token: Some("refresh-token".into()),
-            token_expires_at: Some(u64::MAX),
+            access_token: "access-token".into(),
+            refresh_token: "refresh-token".into(),
+            token_expires_at: u64::MAX,
             xuid: Some("xuid".into()),
             avatar_rgba: None,
         }

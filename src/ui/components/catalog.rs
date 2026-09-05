@@ -9,14 +9,7 @@ pub(in crate::ui) fn provider_tabs<Message>(
 where
     Message: Clone + 'static,
 {
-    let mut tabs = row![
-        text("DOWNLOAD SOURCE")
-            .font(theme::BODY_BOLD)
-            .size(11)
-            .color(theme::MUTED)
-    ]
-    .spacing(7)
-    .align_y(Alignment::Center);
+    let mut tabs = row![].spacing(7).align_y(Alignment::Center);
     for provider in CatalogProvider::ALL {
         tabs = tabs.push(
             button(text(provider.label().to_uppercase()).size(13))

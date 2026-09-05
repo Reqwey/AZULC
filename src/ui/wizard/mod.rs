@@ -31,23 +31,13 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
                 }),
         );
     }
-    let page_tabs = row![
-        text("NEW INSTANCE")
-            .font(theme::BODY_BOLD)
-            .size(12)
-            .color(theme::MUTED),
-        Space::new().width(18),
-        tabs,
-        Space::new().width(Fill)
-    ]
-    .align_y(Alignment::Center);
 
     let page = match app.new_instance_tab {
         NewInstanceTab::Minecraft => minecraft_view(app),
         NewInstanceTab::Modpacks => super::modpacks::view(app),
     };
 
-    column![page_tabs, page]
+    column![tabs, page]
         .spacing(15)
         .width(Fill)
         .height(Fill)

@@ -421,7 +421,6 @@ dependencies = [
  "hex",
  "iced",
  "image",
- "md-5",
  "open",
  "quick-xml 0.42.0",
  "reqwest",
@@ -2509,16 +2508,6 @@ checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
  "cfg-if",
  "rayon",
-]
-
-[[package]]
-name = "md-5"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
-dependencies = [
- "cfg-if",
- "digest",
 ]
 
 [[package]]
@@ -5122,7 +5111,6 @@ checksum = "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
- "md-5",
  "serde_core",
  "wasm-bindgen",
 ]

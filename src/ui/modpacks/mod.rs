@@ -13,14 +13,7 @@ use iced::{Alignment, Element, Fill};
 
 pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     let header = row![
-        column![
-            text("MODPACK DEPOT").size(30),
-            text("CURSEFORGE + MODRINTH // ONE CONTINUOUS INSTALL PIPELINE")
-                .font(theme::BODY_BOLD)
-                .size(11)
-                .color(theme::LAVENDER)
-        ]
-        .spacing(2),
+        text("MODPACK DEPOT").size(30),
         Space::new().width(Fill),
         section_tabs(app)
     ]

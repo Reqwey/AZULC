@@ -1,9 +1,9 @@
-use crate::{domain::OfflineAccount, theme};
+use crate::{domain::Account, theme};
 use iced::widget::{container, image as iced_image, text};
 use iced::{Element, Length, alignment};
 
 pub(in crate::ui) fn account_avatar<'a, Message>(
-    account: &'a OfflineAccount,
+    account: &'a Account,
     selected: bool,
     size: f32,
 ) -> Element<'a, Message>

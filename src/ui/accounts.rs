@@ -1,10 +1,10 @@
 use crate::{
     app::{Launcher, Message},
-    domain::{AccountProvider, OfflineAccount},
+    domain::Account,
     services::auth::microsoft,
     theme,
 };
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill};
 
 use super::components::{
@@ -13,54 +13,16 @@ use super::components::{
 };
 
 pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
-    let header = row![
-        column![
-            text("PLAYER ACCOUNTS").size(31),
-            text("Microsoft accounts are supported for normal play. Offline profiles are temporary launch-test tools.")
-                .font(theme::BODY_FONT)
-                .size(13)
-                .color(theme::TEXT)
-        ]
-    ]
+    let header = row![column![
+        text("PLAYER ACCOUNTS").size(31),
+        text("Sign in and manage licensed Minecraft Java profiles.")
+            .font(theme::BODY_FONT)
+            .size(13)
+            .color(theme::TEXT)
+    ]]
     .align_y(Alignment::Center);
 
     let microsoft_panel = microsoft_panel(app);
-    let offline_panel = container(
-        column![
-            row![
-                text("OFFLINE TEST PROFILE").size(20),
-                Space::new().width(Fill),
-                text("DEVELOPER ONLY")
-                    .font(theme::BODY_BOLD)
-                    .size(11)
-                    .color(theme::WARNING)
-            ]
-            .align_y(Alignment::Center),
-            text(
-                "Temporary launch-testing path. It will be removed before production distribution."
-            )
-            .font(theme::BODY_FONT)
-            .size(12)
-            .color(theme::WARNING),
-            row![
-                text_input("Steve", &app.account_input)
-                    .on_input(Message::AccountInputChanged)
-                    .on_submit(Message::AddOfflineAccount)
-                    .padding(12)
-                    .size(15)
-                    .style(theme::square_text_input),
-                button(text("ADD TEST PROFILE  >").size(14))
-                    .on_press(Message::AddOfflineAccount)
-                    .padding([12, 18])
-                    .style(theme::ghost_button)
-            ]
-            .spacing(10)
-        ]
-        .spacing(11),
-    )
-    .padding(18)
-    .style(theme::inset);
-
     let mut list = column![].spacing(9);
     for account in &app.persisted.accounts {
         let selected = app.persisted.selected_account == Some(account.uuid);
@@ -75,7 +37,7 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
             container(
                 column![
                     text("NO PLAYER PROFILE").size(21).color(theme::WARNING),
-                    text("Sign in with Microsoft to launch a licensed Minecraft account.")
+                    text("Sign in with Microsoft.")
                         .font(theme::BODY_FONT)
                         .size(13)
                         .color(theme::TEXT)
@@ -92,7 +54,6 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
         column![
             header,
             microsoft_panel,
-            offline_panel,
             text("AVAILABLE PROFILES")
                 .font(theme::BODY_BOLD)
                 .size(12)
@@ -131,7 +92,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
         row![
             column![
                 text("MICROSOFT ACCOUNT").size(20),
-                text("Official device-code sign-in · Xbox Live · Minecraft Services")
+                text("Official device-code sign-in")
                     .font(theme::BODY_FONT)
                     .size(12)
                     .color(theme::TEXT)
@@ -217,7 +178,7 @@ fn microsoft_panel(app: &Launcher) -> Element<'_, Message> {
         .into()
 }
 
-fn account_row(account: &OfflineAccount, selected: bool, refreshing: bool) -> Element<'_, Message> {
+fn account_row(account: &Account, selected: bool, refreshing: bool) -> Element<'_, Message> {
     let mut actions = row![
         text(if selected { "ACTIVE" } else { "STANDBY" })
             .font(theme::BODY_BOLD)
@@ -238,10 +199,7 @@ fn account_row(account: &OfflineAccount, selected: bool, refreshing: bool) -> El
     ]
     .spacing(11)
     .align_y(Alignment::Center);
-    if account.provider == AccountProvider::Microsoft {
-        let refresh = account_refresh_button(account.uuid, refreshing);
-        actions = actions.push(refresh);
-    }
+    actions = actions.push(account_refresh_button(account.uuid, refreshing));
     actions = actions.push(
         button(icons::window_control(WindowControl::Close))
             .on_press(Message::DeleteAccount(account.uuid))
@@ -257,14 +215,10 @@ fn account_row(account: &OfflineAccount, selected: bool, refreshing: bool) -> El
             column![
                 row![
                     text(&account.username).size(19),
-                    text(account.provider.to_string().to_uppercase())
+                    text("MICROSOFT")
                         .font(theme::BODY_BOLD)
                         .size(11)
-                        .color(if account.provider == AccountProvider::Microsoft {
-                            theme::SUCCESS
-                        } else {
-                            theme::WARNING
-                        })
+                        .color(theme::SUCCESS)
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),

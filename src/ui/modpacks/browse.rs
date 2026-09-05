@@ -81,20 +81,13 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
 
 fn project_search<'a>(app: &'a Launcher, browser: &'a ModpackBrowserState) -> Element<'a, Message> {
     let controls = row![
-        column![
-            text("FIND A PACK")
-                .font(theme::BODY_BOLD)
-                .size(11)
-                .color(theme::MUTED),
-            text_input("Search modpacks by name…", &browser.query)
-                .on_input(Message::ModpackQueryChanged)
-                .on_submit(Message::SearchModpacks)
-                .padding(11)
-                .size(13)
-                .width(Length::Fixed(460.0))
-                .style(theme::square_text_input)
-        ]
-        .spacing(5),
+        text_input("Search modpacks by name…", &browser.query)
+            .on_input(Message::ModpackQueryChanged)
+            .on_submit(Message::SearchModpacks)
+            .padding(11)
+            .size(13)
+            .width(Length::Fixed(460.0))
+            .style(theme::square_text_input),
         button(text("SEARCH").size(14))
             .on_press(Message::SearchModpacks)
             .padding([11, 20])

@@ -1,7 +1,7 @@
 //! Per-instance launch attempts, monitor requests, and visible session state.
 
 use crate::{
-    domain::{Instance, OfflineAccount},
+    domain::{Account, Instance},
     storage::Paths,
 };
 use std::{collections::HashMap, path::PathBuf, time::Instant};
@@ -17,7 +17,7 @@ pub(crate) struct LaunchAttempt {
 pub(in crate::app) struct LaunchKey {
     pub(in crate::app) attempt: LaunchAttempt,
     pub(super) instance: Instance,
-    pub(super) account: OfflineAccount,
+    pub(super) account: Account,
     pub(super) paths: Paths,
 }
 
@@ -117,7 +117,7 @@ impl LaunchRegistry {
     pub(super) fn activate(
         &mut self,
         attempt: &LaunchAttempt,
-        account: OfflineAccount,
+        account: Account,
         paths: Paths,
     ) -> bool {
         if self.requests.contains_key(&attempt.instance_id) || !self.is_current(attempt) {
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn one_verified_account_can_activate_two_isolated_instances_in_parallel() {
         let mut launches = LaunchRegistry::default();
-        let account = OfflineAccount::new("Player");
+        let account = account("Player");
         let first = launches
             .begin(&instance(Uuid::new_v4(), true), "Preparing")
             .unwrap();
@@ -260,8 +260,8 @@ mod tests {
         let second = instance(Uuid::new_v4(), true);
         let first_attempt = launches.begin(&first, "Preparing").unwrap();
         let second_attempt = launches.begin(&second, "Preparing").unwrap();
-        assert!(launches.activate(&first_attempt, OfflineAccount::new("First"), paths()));
-        assert!(launches.activate(&second_attempt, OfflineAccount::new("Second"), paths()));
+        assert!(launches.activate(&first_attempt, account("First"), paths()));
+        assert!(launches.activate(&second_attempt, account("Second"), paths()));
 
         launches.session_mut(&first_attempt).unwrap().active = false;
         launches.finish(&first_attempt);
@@ -295,7 +295,7 @@ mod tests {
         let attempt = launches.begin(&instance, "Preparing").unwrap();
         instance.name = "After".into();
 
-        assert!(launches.activate(&attempt, OfflineAccount::new("Player"), paths()));
+        assert!(launches.activate(&attempt, account("Player"), paths()));
 
         let launched = launches.requests().next().unwrap();
         assert_eq!(launched.instance.name, "Before");
@@ -309,7 +309,7 @@ mod tests {
         let stale = launches.begin(&instance, "First").unwrap();
         launches.session_mut(&stale).unwrap().active = false;
         let current = launches.begin(&instance, "Second").unwrap();
-        assert!(launches.activate(&current, OfflineAccount::new("Player"), paths()));
+        assert!(launches.activate(&current, account("Player"), paths()));
 
         launches.finish(&stale);
 
@@ -349,6 +349,18 @@ mod tests {
             instances: data.join("instances"),
             state_file: data.join("state.json"),
             data,
+        }
+    }
+
+    fn account(username: &str) -> Account {
+        Account {
+            username: username.into(),
+            uuid: Uuid::new_v4(),
+            access_token: "access-token".into(),
+            refresh_token: "refresh-token".into(),
+            token_expires_at: u64::MAX,
+            xuid: None,
+            avatar_rgba: None,
         }
     }
 }

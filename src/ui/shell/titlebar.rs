@@ -1,6 +1,5 @@
 use crate::{
     app::{Launcher, Message, navigation::Route},
-    domain::AccountProvider,
     theme,
     ui::components::{self, icons},
 };
@@ -60,20 +59,14 @@ fn account_button(app: &Launcher) -> Element<'_, Message> {
             avatar,
             column![
                 text(account.map_or("NO PROFILE", |value| value.username.as_str())).size(14),
-                text(
-                    account.map_or("CREATE AN ACCOUNT", |value| match value.provider {
-                        AccountProvider::Microsoft => "MICROSOFT / ACTIVE",
-                        AccountProvider::Offline => "OFFLINE TEST / ACTIVE",
-                        AccountProvider::ThirdParty => "UNSUPPORTED / ACTIVE",
-                    })
-                )
-                .font(theme::BODY_FONT)
-                .size(10)
-                .color(theme::MUTED)
+                text(account.map_or("CREATE AN ACCOUNT", |_| "MICROSOFT ACCOUNT"))
+                    .font(theme::BODY_FONT)
+                    .size(10)
+                    .color(theme::MUTED)
             ]
             .spacing(1),
             Space::new().width(Fill),
-            text(">").size(15).color(theme::LAVENDER)
+            icons::account_controls()
         ]
         .spacing(8)
         .align_y(Alignment::Center),

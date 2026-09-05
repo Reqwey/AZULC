@@ -65,8 +65,6 @@ impl Launcher {
                     return window::close(id);
                 }
             }
-            Message::AccountInputChanged(value) => self.account_input = value,
-            Message::AddOfflineAccount => self.add_account(),
             Message::BeginMicrosoftLogin => return self.begin_microsoft_login(),
             Message::MicrosoftDeviceAuthorizationLoaded(request_id, result) => {
                 if self.microsoft_login.request_id != request_id {
@@ -152,7 +150,6 @@ impl Launcher {
                         profile,
                     )
                 {
-                    self.persisted.account = self.persisted.active_account().cloned();
                     self.save();
                 }
             }
@@ -188,7 +185,6 @@ impl Launcher {
                     .any(|account| account.uuid == id)
                 {
                     self.persisted.selected_account = Some(id);
-                    self.persisted.account = self.persisted.active_account().cloned();
                     self.save();
                 }
             }
@@ -200,16 +196,6 @@ impl Launcher {
                     self.persisted.selected_account =
                         self.persisted.accounts.first().map(|account| account.uuid);
                 }
-                self.persisted.account = self
-                    .persisted
-                    .selected_account
-                    .and_then(|selected| {
-                        self.persisted
-                            .accounts
-                            .iter()
-                            .find(|account| account.uuid == selected)
-                    })
-                    .cloned();
                 self.save();
             }
             Message::WizardStepSelected(step) => {

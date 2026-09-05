@@ -1,5 +1,5 @@
 use crate::{
-    domain::{AccountProvider, Instance, JavaRuntime, LoaderKind, OfflineAccount},
+    domain::{Account, Instance, JavaRuntime, LoaderKind},
     services::{
         auth::microsoft,
         java,
@@ -74,12 +74,7 @@ pub enum LaunchError {
     Spawn(String),
 }
 
-pub async fn monitor(
-    instance: Instance,
-    account: OfflineAccount,
-    paths: Paths,
-    tx: Sender<LaunchEvent>,
-) {
+pub async fn monitor(instance: Instance, account: Account, paths: Paths, tx: Sender<LaunchEvent>) {
     let fallback_log = instance.game_dir.join(".azulc/latest-launch.log");
     let error_tx = tx.clone();
     let result = tokio::task::spawn_blocking(move || {
@@ -101,7 +96,7 @@ pub async fn monitor(
 
 fn launch_and_monitor_blocking(
     instance: Instance,
-    account: OfflineAccount,
+    account: Account,
     paths: Paths,
     tx: Sender<LaunchEvent>,
 ) -> Result<(), LaunchError> {
@@ -169,31 +164,15 @@ fn launch_and_monitor_blocking(
     );
     vars.insert("${assets_index_name}", asset_index.to_string());
     vars.insert("${auth_uuid}", account.uuid.simple().to_string());
-    let access_token = account
-        .access_token
-        .as_deref()
-        .filter(|token| !token.is_empty())
-        .unwrap_or("0")
-        .to_owned();
-    vars.insert("${auth_access_token}", access_token.clone());
-    vars.insert(
-        "${auth_session}",
-        format!("token:{access_token}:{}", account.uuid.simple()),
-    );
+    let auth_session = format!("token:{}:{}", account.access_token, account.uuid.simple());
+    vars.insert("${auth_access_token}", account.access_token);
+    vars.insert("${auth_session}", auth_session);
     vars.insert(
         "${clientid}",
         std::env::var(microsoft::CLIENT_ID_ENV).unwrap_or_default(),
     );
     vars.insert("${auth_xuid}", account.xuid.clone().unwrap_or_default());
-    vars.insert(
-        "${user_type}",
-        if account.provider == AccountProvider::Microsoft {
-            "msa"
-        } else {
-            "legacy"
-        }
-        .into(),
-    );
+    vars.insert("${user_type}", "msa".into());
     vars.insert("${version_type}", "release".into());
     vars.insert(
         "${natives_directory}",

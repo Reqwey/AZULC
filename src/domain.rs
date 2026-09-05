@@ -1,38 +1,14 @@
-use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::{fmt, path::PathBuf};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum AccountProvider {
-    #[default]
-    Offline,
-    Microsoft,
-    ThirdParty,
-}
-
-impl fmt::Display for AccountProvider {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Offline => "Offline",
-            Self::Microsoft => "Microsoft",
-            Self::ThirdParty => "Third-party",
-        })
-    }
-}
-
 #[derive(Clone, Hash, Serialize, Deserialize)]
-pub struct OfflineAccount {
+pub struct Account {
     pub username: String,
     pub uuid: Uuid,
-    #[serde(default)]
-    pub provider: AccountProvider,
-    #[serde(default)]
-    pub access_token: Option<String>,
-    #[serde(default)]
-    pub refresh_token: Option<String>,
-    #[serde(default)]
-    pub token_expires_at: Option<u64>,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_expires_at: u64,
     #[serde(default)]
     pub xuid: Option<String>,
     /// Pre-rendered 64×64 RGBA player head, including the hat layer.
@@ -40,45 +16,18 @@ pub struct OfflineAccount {
     pub avatar_rgba: Option<Vec<u8>>,
 }
 
-impl fmt::Debug for OfflineAccount {
+impl fmt::Debug for Account {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("OfflineAccount")
+            .debug_struct("Account")
             .field("username", &self.username)
             .field("uuid", &self.uuid)
-            .field("provider", &self.provider)
-            .field(
-                "access_token",
-                &self.access_token.as_ref().map(|_| "<redacted>"),
-            )
-            .field(
-                "refresh_token",
-                &self.refresh_token.as_ref().map(|_| "<redacted>"),
-            )
+            .field("access_token", &"<redacted>")
+            .field("refresh_token", &"<redacted>")
             .field("token_expires_at", &self.token_expires_at)
             .field("xuid", &self.xuid.as_ref().map(|_| "<redacted>"))
             .field("has_avatar", &self.avatar_rgba.is_some())
             .finish()
-    }
-}
-
-impl OfflineAccount {
-    pub fn new(username: impl Into<String>) -> Self {
-        let username = username.into();
-        let seed = format!("OfflinePlayer:{username}");
-        let mut bytes: [u8; 16] = Md5::digest(seed.as_bytes()).into();
-        bytes[6] = (bytes[6] & 0x0f) | 0x30;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        Self {
-            username,
-            uuid: Uuid::from_bytes(bytes),
-            provider: AccountProvider::Offline,
-            access_token: None,
-            refresh_token: None,
-            token_expires_at: None,
-            xuid: None,
-            avatar_rgba: None,
-        }
     }
 }
 
@@ -87,22 +36,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offline_uuid_matches_java_name_uuid_algorithm() {
-        assert_eq!(
-            OfflineAccount::new("Steve").uuid.to_string(),
-            "5627dd98-e6be-3c21-b8a8-e92344183641"
-        );
-    }
-
-    #[test]
     fn account_debug_output_redacts_credentials() {
-        let mut account = OfflineAccount::new("Player");
-        account.access_token = Some("secret-access-token".into());
-        account.refresh_token = Some("secret-refresh-token".into());
+        let account = Account {
+            username: "Player".into(),
+            uuid: Uuid::new_v4(),
+            access_token: "secret-access-token".into(),
+            refresh_token: "secret-refresh-token".into(),
+            token_expires_at: u64::MAX,
+            xuid: None,
+            avatar_rgba: None,
+        };
 
         let debug = format!("{account:?}");
 
         assert!(!debug.contains("secret-access-token") && !debug.contains("secret-refresh-token"));
+    }
+
+    #[test]
+    fn serialized_account_has_no_provider_discriminator() {
+        let account = Account {
+            username: "Player".into(),
+            uuid: Uuid::new_v4(),
+            access_token: "access-token".into(),
+            refresh_token: "refresh-token".into(),
+            token_expires_at: u64::MAX,
+            xuid: None,
+            avatar_rgba: None,
+        };
+
+        let serialized = serde_json::to_value(account).unwrap();
+
+        assert!(serialized.get("provider").is_none());
     }
 }
 
@@ -443,9 +407,7 @@ pub enum PipelineEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PersistedState {
     #[serde(default)]
-    pub account: Option<OfflineAccount>,
-    #[serde(default)]
-    pub accounts: Vec<OfflineAccount>,
+    pub accounts: Vec<Account>,
     #[serde(default)]
     pub selected_account: Option<Uuid>,
     #[serde(default)]
@@ -458,11 +420,6 @@ pub struct PersistedState {
 
 impl PersistedState {
     pub fn migrate(&mut self) {
-        if self.accounts.is_empty()
-            && let Some(account) = self.account.clone()
-        {
-            self.accounts.push(account);
-        }
         if self.selected_account.is_none()
             || !self
                 .accounts
@@ -471,22 +428,17 @@ impl PersistedState {
         {
             self.selected_account = self.accounts.first().map(|account| account.uuid);
         }
-        self.account = self
-            .selected_account
-            .and_then(|id| self.accounts.iter().find(|account| account.uuid == id))
-            .cloned();
         self.settings.download.concurrency = self
             .settings
             .download
             .concurrency
             .clamp(1, cpu_thread_count());
-        self.schema_version = 4;
+        self.schema_version = 5;
     }
 
-    pub fn active_account(&self) -> Option<&OfflineAccount> {
+    pub fn active_account(&self) -> Option<&Account> {
         self.selected_account
             .and_then(|id| self.accounts.iter().find(|account| account.uuid == id))
-            .or(self.account.as_ref())
     }
 }
 
@@ -495,10 +447,8 @@ mod persisted_state_tests {
     use super::*;
 
     #[test]
-    fn migrates_the_legacy_single_account_and_clamps_workers() {
-        let legacy = OfflineAccount::new("Alex");
+    fn migration_clamps_workers_and_sets_the_schema_version() {
         let mut state = PersistedState {
-            account: Some(legacy.clone()),
             settings: AppSettings {
                 download: DownloadPolicy {
                     source: DownloadSource::Official,
@@ -511,23 +461,14 @@ mod persisted_state_tests {
 
         state.migrate();
 
-        assert_eq!(state.accounts.len(), 1);
-        assert_eq!(state.selected_account, Some(legacy.uuid));
-        assert_eq!(
-            state
-                .active_account()
-                .map(|account| account.username.as_str()),
-            Some("Alex")
-        );
         assert_eq!(state.settings.download.concurrency, cpu_thread_count());
-        assert_eq!(state.schema_version, 4);
+        assert_eq!(state.schema_version, 5);
     }
 
     #[test]
     fn repairs_a_selected_account_that_no_longer_exists() {
-        let first = OfflineAccount::new("PlayerOne");
+        let first = account("PlayerOne");
         let mut state = PersistedState {
-            account: Some(OfflineAccount::new("Ghost")),
             accounts: vec![first.clone()],
             selected_account: Some(Uuid::new_v4()),
             ..PersistedState::default()
@@ -537,9 +478,28 @@ mod persisted_state_tests {
 
         assert_eq!(state.selected_account, Some(first.uuid));
         assert_eq!(
-            state.account.as_ref().map(|account| account.uuid),
+            state.active_account().map(|account| account.uuid),
             Some(first.uuid)
         );
+    }
+
+    #[test]
+    fn serialized_state_has_no_legacy_single_account_field() {
+        let serialized = serde_json::to_value(PersistedState::default()).unwrap();
+
+        assert!(serialized.get("account").is_none());
+    }
+
+    fn account(username: &str) -> Account {
+        Account {
+            username: username.into(),
+            uuid: Uuid::new_v4(),
+            access_token: "access-token".into(),
+            refresh_token: "refresh-token".into(),
+            token_expires_at: u64::MAX,
+            xuid: None,
+            avatar_rgba: None,
+        }
     }
 }
 

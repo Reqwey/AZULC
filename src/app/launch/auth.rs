@@ -5,7 +5,7 @@ use crate::{
         Launcher, Message,
         accounts::{apply_replacement_refresh_token, replace_microsoft_account},
     },
-    domain::{AccountProvider, Instance, OfflineAccount},
+    domain::{Account, Instance},
     services::auth::microsoft,
 };
 use iced::Task;
@@ -58,15 +58,14 @@ impl LaunchAuthentication {
         !matches!(self.state, LaunchAuthState::Idle)
     }
 
-    pub(crate) fn needs_verification(&self, account: &OfflineAccount) -> bool {
-        account.provider == AccountProvider::Microsoft
-            && !self.verified_accounts.contains(&account.uuid)
+    pub(crate) fn needs_verification(&self, account: &Account) -> bool {
+        !self.verified_accounts.contains(&account.uuid)
     }
 
     pub(crate) fn begin(
         &mut self,
         instance: Instance,
-        account: &OfflineAccount,
+        account: &Account,
     ) -> Option<LaunchAuthCheck> {
         if self.is_blocking() || !self.needs_verification(account) {
             return None;
@@ -178,7 +177,7 @@ impl Launcher {
 
     pub(super) fn validate_microsoft_account_for_launch(
         check: LaunchAuthCheck,
-        account: OfflineAccount,
+        account: Account,
     ) -> Task<Message> {
         Task::perform(
             async move {
@@ -233,7 +232,7 @@ impl Launcher {
     pub(in crate::app) fn finish_launch_account_refresh(
         &mut self,
         check: LaunchAuthCheck,
-        result: Result<OfflineAccount, microsoft::AccountRefreshError>,
+        result: Result<Account, microsoft::AccountRefreshError>,
     ) {
         if !self.launch_auth.is_checking(check) {
             return;
@@ -248,13 +247,11 @@ impl Launcher {
                         check.account_id,
                         refresh_token,
                     )
+                    && let Err(error) = self.paths.save(&self.persisted)
                 {
-                    self.persisted.account = self.persisted.active_account().cloned();
-                    if let Err(error) = self.paths.save(&self.persisted) {
-                        message.push_str(&format!(
-                            " The rotated refresh token could not be saved: {error}"
-                        ));
-                    }
+                    message.push_str(&format!(
+                        " The rotated refresh token could not be saved: {error}"
+                    ));
                 }
                 self.launch_auth.fail(check, message);
                 return;
@@ -263,7 +260,7 @@ impl Launcher {
         self.complete_launch_authentication(check, refreshed);
     }
 
-    fn complete_launch_authentication(&mut self, check: LaunchAuthCheck, account: OfflineAccount) {
+    fn complete_launch_authentication(&mut self, check: LaunchAuthCheck, account: Account) {
         let verified = match validate_refreshed_account(check.account_id, account) {
             Ok(account) => account,
             Err(message) => {
@@ -279,7 +276,6 @@ impl Launcher {
             );
             return;
         }
-        self.persisted.account = self.persisted.active_account().cloned();
         if let Err(error) = self.paths.save(&self.persisted) {
             self.launch_auth.fail(
                 check,
@@ -293,21 +289,16 @@ impl Launcher {
         self.start_instance_launch(instance, launch_account);
     }
 
-    fn saved_microsoft_account(&self, check: LaunchAuthCheck) -> Option<OfflineAccount> {
+    fn saved_microsoft_account(&self, check: LaunchAuthCheck) -> Option<Account> {
         self.persisted
             .accounts
             .iter()
-            .find(|account| {
-                account.uuid == check.account_id && account.provider == AccountProvider::Microsoft
-            })
+            .find(|account| account.uuid == check.account_id)
             .cloned()
     }
 }
 
-fn validate_refreshed_account(
-    account_id: Uuid,
-    account: OfflineAccount,
-) -> Result<OfflineAccount, String> {
+fn validate_refreshed_account(account_id: Uuid, account: Account) -> Result<Account, String> {
     if account.uuid == account_id {
         Ok(account)
     } else {
@@ -320,13 +311,6 @@ mod tests {
     use super::*;
     use crate::domain::{InstanceColor, InstanceOrigin, InstanceSettings, LoaderKind, LoaderSpec};
     use std::path::PathBuf;
-
-    #[test]
-    fn offline_accounts_do_not_need_launch_verification() {
-        let authentication = LaunchAuthentication::default();
-
-        assert!(!authentication.needs_verification(&OfflineAccount::new("Offline")));
-    }
 
     #[test]
     fn beginning_a_check_blocks_for_only_the_selected_account() {
@@ -516,14 +500,13 @@ mod tests {
         assert!(refreshed.is_err());
     }
 
-    fn microsoft_account(username: &str) -> OfflineAccount {
-        OfflineAccount {
+    fn microsoft_account(username: &str) -> Account {
+        Account {
             username: username.into(),
             uuid: Uuid::new_v4(),
-            provider: AccountProvider::Microsoft,
-            access_token: Some("access-token".into()),
-            refresh_token: Some("refresh-token".into()),
-            token_expires_at: Some(u64::MAX),
+            access_token: "access-token".into(),
+            refresh_token: "refresh-token".into(),
+            token_expires_at: u64::MAX,
             xuid: Some("xuid".into()),
             avatar_rgba: None,
         }

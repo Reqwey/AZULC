@@ -11,7 +11,7 @@ pub(super) use sessions::{LaunchKey, LaunchRegistry};
 use self::sessions::LaunchConflict;
 use super::{Launcher, Message};
 use crate::{
-    domain::{Instance, OfflineAccount},
+    domain::{Account, Instance},
     services::launcher,
 };
 use futures::SinkExt;
@@ -47,7 +47,7 @@ impl Launcher {
         Task::none()
     }
 
-    pub(super) fn start_instance_launch(&mut self, instance: Instance, account: OfflineAccount) {
+    pub(super) fn start_instance_launch(&mut self, instance: Instance, account: Account) {
         if self.deleting_instances.contains(&instance.id)
             || !self
                 .persisted
@@ -82,7 +82,7 @@ impl Launcher {
         self.activate_launch(attempt, account);
     }
 
-    pub(super) fn activate_launch(&mut self, attempt: LaunchAttempt, account: OfflineAccount) {
+    pub(super) fn activate_launch(&mut self, attempt: LaunchAttempt, account: Account) {
         if let Some(session) = self.launches.session_mut(&attempt) {
             session.status = "Preparing Java, libraries, natives, and launch arguments…".into();
         }

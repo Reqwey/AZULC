@@ -7,7 +7,6 @@ Azusa Minecraft Launcher (AZULC) is a next-generation lightweight, high-performa
 ## Current features
 
 - Multiple Microsoft accounts through device-code OAuth, with on-demand launch verification, session reuse, and active-skin avatars.
-- Temporary offline test profiles with stable Java-compatible offline UUIDs.
 - Minecraft release, snapshot, legacy, and April Fools catalogs.
 - Vanilla, Fabric, Forge, and NeoForge installation.
 - Live compatible loader-build catalogs with source-aware fallback and automatic selection of the newest stable build.

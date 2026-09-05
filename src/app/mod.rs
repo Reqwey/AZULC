@@ -51,7 +51,6 @@ pub struct Launcher {
     pub(crate) wizard_step: WizardStep,
     pub(crate) version_filter: VersionFilter,
     last_instance_id: Option<Uuid>,
-    pub(crate) account_input: String,
     pub(crate) microsoft_login: MicrosoftLoginState,
     pub(crate) wizard: WizardDraft,
     pub(crate) versions: Vec<minecraft::VersionEntry>,
@@ -98,10 +97,7 @@ impl Launcher {
         let accounts_missing_avatars = persisted
             .accounts
             .iter()
-            .filter(|account| {
-                account.provider == crate::domain::AccountProvider::Microsoft
-                    && account.avatar_rgba.is_none()
-            })
+            .filter(|account| account.avatar_rgba.is_none())
             .cloned()
             .collect::<Vec<_>>();
         let app = Self {
@@ -114,7 +110,6 @@ impl Launcher {
             wizard_step: WizardStep::Version,
             version_filter: VersionFilter::Release,
             last_instance_id,
-            account_input: String::new(),
             microsoft_login: MicrosoftLoginState::default(),
             wizard: WizardDraft::default(),
             versions: Vec::new(),
