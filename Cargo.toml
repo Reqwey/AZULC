@@ -33,6 +33,9 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
+[build-dependencies]
+embed-resource = "3.0"
+
 [profile.release]
 lto = "thin"
 strip = true

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1240" viewBox="0 0 900 1240" role="img" aria-labelledby="title desc">
+  <title id="title">AZULC three-layer architecture shuttle</title>
+  <desc id="desc">Messages and tasks travel down between three separated layers. Events and results travel up through independent, center-aligned shuttles.</desc>
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#171222"/><stop offset="1" stop-color="#0d0a15"/></linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b89cff"/><stop offset="1" stop-color="#e4d8ff"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#74e4c2"/><stop offset="1" stop-color="#b9ffe7"/></linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M28 0H0V28" fill="none" stroke="#8b72c6" stroke-opacity=".08"/></pattern>
+    <filter id="glow-purple" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7" result="blur"/><feFlood flood-color="#b89cff" flood-opacity=".42"/><feComposite in2="blur" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="glow-mint" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7" result="blur"/><feFlood flood-color="#74e4c2" flood-opacity=".34"/><feComposite in2="blur" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M1 1 9 5 1 9Z" fill="#cdb9ff"/></marker>
+    <marker id="arrow-mint" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M1 1 9 5 1 9Z" fill="#8ff0d1"/></marker>
+  </defs>
+  <rect x="1" y="1" width="898" height="1238" fill="url(#canvas)" stroke="#3b3054" stroke-width="2"/>
+  <rect x="1" y="1" width="898" height="1238" fill="url(#grid)"/>
+  <g font-family="'Space Mono', 'Cascadia Mono', monospace">
+    <text x="50" y="58" fill="#f2ebff" font-size="25" font-weight="700" letter-spacing="2">AZULC / THREE-LAYER SHUTTLE</text>
+    <text x="50" y="88" fill="#9588ad" font-size="13" letter-spacing="1">ONE STATE MACHINE · EXPLICIT SIDE EFFECTS · OBSERVABLE RETURN EVENTS</text>
+
+    <!-- UI -->
+    <g>
+      <rect x="50" y="130" width="800" height="220" fill="#211a30" stroke="#665284"/><rect x="50" y="130" width="12" height="220" fill="#d8c8ff"/>
+      <text x="86" y="180" fill="#d8c8ff" font-size="28" font-weight="700">UI</text><text x="86" y="208" fill="#9f93b4" font-size="14">STATELESS ICED VIEWS</text>
+      <g fill="#171220" stroke="#55456f"><rect x="86" y="245" width="190" height="72"/><rect x="355" y="245" width="190" height="72"/><rect x="624" y="245" width="190" height="72"/></g>
+      <g fill="#eee7ff" font-size="17" text-anchor="middle"><text x="181" y="288">SHELL</text><text x="450" y="288">PAGES</text><text x="719" y="288">OVERLAYS</text></g>
+    </g>
+
+    <!-- UI / App shuttle -->
+    <path d="M380 362V488" fill="none" stroke="#cdb9ff" stroke-width="3" marker-end="url(#arrow-purple)"/><path d="M525 488V362" fill="none" stroke="#8ff0d1" stroke-width="3" marker-end="url(#arrow-mint)"/>
+    <g filter="url(#glow-purple)"><rect x="315" y="406" width="130" height="38" fill="#211a30" stroke="url(#purple)" stroke-width="2"/><circle cx="336" cy="425" r="6" fill="#d8c8ff"/><text x="393" y="431" fill="#efe8ff" font-size="13" text-anchor="middle">MESSAGE</text></g>
+    <g filter="url(#glow-mint)"><rect x="455" y="406" width="140" height="38" fill="#13241f" stroke="url(#mint)" stroke-width="2"/><circle cx="476" cy="425" r="6" fill="#8ff0d1"/><text x="537" y="431" fill="#ddfff4" font-size="13" text-anchor="middle">EVENT</text></g>
+
+    <!-- App -->
+    <g>
+      <rect x="50" y="500" width="800" height="220" fill="#1c1929" stroke="#5a4d76"/><rect x="50" y="500" width="12" height="220" fill="#b89cff"/>
+      <text x="86" y="550" fill="#c9b5ff" font-size="28" font-weight="700">APP</text><text x="86" y="578" fill="#9f93b4" font-size="14">OWNED LAUNCHER STATE</text>
+      <g fill="#15111e" stroke="#665284"><rect x="86" y="615" width="190" height="72"/><rect x="355" y="615" width="190" height="72"/><rect x="624" y="615" width="190" height="72"/></g>
+      <g fill="#eee7ff" font-size="17" text-anchor="middle"><text x="181" y="658">ROUTER</text><text x="450" y="658">UPDATE LOOP</text><text x="719" y="658">REGISTRIES</text></g>
+    </g>
+
+    <!-- App / Services shuttle -->
+    <path d="M380 732V858" fill="none" stroke="#cdb9ff" stroke-width="3" marker-end="url(#arrow-purple)"/><path d="M525 858V732" fill="none" stroke="#8ff0d1" stroke-width="3" marker-end="url(#arrow-mint)"/>
+    <g filter="url(#glow-purple)"><rect x="315" y="776" width="130" height="38" fill="#211a30" stroke="url(#purple)" stroke-width="2"/><circle cx="336" cy="795" r="6" fill="#d8c8ff"/><text x="393" y="801" fill="#efe8ff" font-size="13" text-anchor="middle">TASK</text></g>
+    <g filter="url(#glow-mint)"><rect x="455" y="776" width="140" height="38" fill="#13241f" stroke="url(#mint)" stroke-width="2"/><circle cx="476" cy="795" r="6" fill="#8ff0d1"/><text x="537" y="801" fill="#ddfff4" font-size="13" text-anchor="middle">RESULT</text></g>
+
+    <!-- Services -->
+    <g>
+      <rect x="50" y="870" width="800" height="220" fill="#14241f" stroke="#356c5d"/><rect x="50" y="870" width="12" height="220" fill="#74e4c2"/>
+      <text x="86" y="920" fill="#8ff0d1" font-size="28" font-weight="700">SERVICES</text><text x="86" y="948" fill="#82aa9d" font-size="14">EXPLICIT SIDE EFFECTS</text>
+      <g fill="#101b18" stroke="#356c5d"><rect x="86" y="985" width="190" height="72"/><rect x="355" y="985" width="190" height="72"/><rect x="624" y="985" width="190" height="72"/></g>
+      <g fill="#ddfff4" font-size="14" text-anchor="middle"><text x="181" y="1028">AUTH / CATALOG</text><text x="450" y="1028">INSTALL / LAUNCH</text><text x="719" y="1028">FILES / NETWORK</text></g>
+    </g>
+
+    <!-- Legend -->
+    <g transform="translate(50 1142)"><rect width="365" height="36" fill="#211a30" stroke="#665284"/><circle cx="21" cy="18" r="6" fill="#d8c8ff"/><text x="40" y="23" fill="#cabde0" font-size="13">INTENT FLOWS DOWN</text><path d="M245 18h92" stroke="#cdb9ff" stroke-width="2" marker-end="url(#arrow-purple)"/></g>
+    <g transform="translate(435 1142)"><rect width="415" height="36" fill="#14241f" stroke="#356c5d"/><circle cx="21" cy="18" r="6" fill="#8ff0d1"/><text x="40" y="23" fill="#a9d8ca" font-size="13">OBSERVATION FLOWS UP</text><path d="M282 18h105" stroke="#8ff0d1" stroke-width="2" marker-end="url(#arrow-mint)"/></g>
+    <text x="450" y="1210" fill="#6f6381" font-size="13" text-anchor="middle">src/ui &lt;-&gt; src/app &lt;-&gt; src/services</text>
+  </g>
+</svg>
