@@ -69,7 +69,6 @@ pub(super) fn view<'a>(
                             row![
                                 text(&file.display_name)
                                     .size(16)
-                                    .width(Fill)
                                     .wrapping(Wrapping::WordOrGlyph),
                                 text(release_label(file.release_type))
                                     .font(theme::BODY_BOLD)
@@ -77,6 +76,7 @@ pub(super) fn view<'a>(
                                     .color(release_color(file.release_type))
                             ]
                             .spacing(8)
+                            .align_y(Alignment::Center)
                             .width(Fill),
                             text(format!(
                                 "{} // {} // {}",
@@ -102,7 +102,6 @@ pub(super) fn view<'a>(
                                 available.then_some(Message::ResourceFilePicked(file.clone()))
                             )
                             .padding([9, 13])
-                            .width(Length::Fixed(116.0))
                             .style(theme::primary_button)
                     ]
                     .spacing(10)

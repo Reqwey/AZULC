@@ -80,7 +80,7 @@ fn account_button(app: &Launcher) -> Element<'_, Message> {
     )
     .width(240)
     .height(44)
-    .padding([4, 10])
+    .padding([6, 10])
     .on_press(Message::Navigate(Route::Accounts))
     .style(theme::ghost_button)
     .into()

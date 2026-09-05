@@ -2,7 +2,7 @@ use crate::theme;
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{Space, Stack, container, image as iced_image, row, text};
 use iced::{Alignment, Element, Fill, Padding};
-use std::{collections::VecDeque, sync::OnceLock};
+use std::sync::OnceLock;
 
 const HERO_HEIGHT: f32 = 258.0;
 const WORDMARK_WIDTH: f32 = 540.0;
@@ -138,57 +138,11 @@ fn silhouette_handle() -> iced_image::Handle {
 
 fn tinted_source() -> Option<::image::RgbaImage> {
     let mut source = ::image::load_from_memory(GIRL_SOURCE).ok()?.into_rgba8();
-    fill_small_transparent_holes(&mut source, 32);
     for pixel in source.pixels_mut() {
         let alpha = pixel[3];
         *pixel = ::image::Rgba([0xD8, 0xC8, 0xFF, alpha]);
     }
     Some(source)
-}
-
-/// Repairs accidental pinholes in otherwise opaque artwork while preserving
-/// intentional cut-outs such as the eyes, mouth, and exterior transparency.
-fn fill_small_transparent_holes(source: &mut ::image::RgbaImage, maximum_area: usize) {
-    let (width, height) = source.dimensions();
-    let mut seen = vec![false; (width * height) as usize];
-    for y in 0..height {
-        for x in 0..width {
-            let start = (y * width + x) as usize;
-            if seen[start] || source.get_pixel(x, y)[3] != 0 {
-                continue;
-            }
-            let mut queue = VecDeque::from([(x, y)]);
-            let mut component = Vec::new();
-            let mut reaches_edge = false;
-            seen[start] = true;
-            while let Some((current_x, current_y)) = queue.pop_front() {
-                component.push((current_x, current_y));
-                reaches_edge |= current_x == 0
-                    || current_y == 0
-                    || current_x + 1 == width
-                    || current_y + 1 == height;
-                for (next_x, next_y) in [
-                    (current_x.wrapping_sub(1), current_y),
-                    (current_x + 1, current_y),
-                    (current_x, current_y.wrapping_sub(1)),
-                    (current_x, current_y + 1),
-                ] {
-                    if next_x < width && next_y < height {
-                        let index = (next_y * width + next_x) as usize;
-                        if !seen[index] && source.get_pixel(next_x, next_y)[3] == 0 {
-                            seen[index] = true;
-                            queue.push_back((next_x, next_y));
-                        }
-                    }
-                }
-            }
-            if !reaches_edge && component.len() <= maximum_area {
-                for (hole_x, hole_y) in component {
-                    source.get_pixel_mut(hole_x, hole_y)[3] = 0xFF;
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -214,16 +168,31 @@ mod tests {
     }
 
     #[test]
-    fn silhouette_repairs_only_small_holes_and_uses_one_color() {
+    fn silhouette_preserves_exterior_and_generated_cutouts() {
         let source = ::image::load_from_memory(GIRL_SOURCE)
             .expect("source PNG")
             .into_rgba8();
         let tinted = tinted_source().expect("tinted PNG");
         assert_eq!(source.dimensions(), tinted.dimensions());
-        assert_eq!(source.get_pixel(198, 357)[3], 0);
-        assert_eq!(tinted.get_pixel(198, 357)[3], 0xFF);
-        assert_eq!(source.get_pixel(300, 532)[3], 0);
-        assert_eq!(tinted.get_pixel(300, 532)[3], 0);
+        assert_eq!(source.get_pixel(300, 30)[3], 0);
+        assert_eq!(tinted.get_pixel(55, 248)[3], 0);
+        assert!(tinted.get_pixel(20, 248)[3] > 0xF0);
+        assert_eq!(tinted.get_pixel(220, 405)[3], 0);
+        assert_eq!(tinted.get_pixel(390, 400)[3], 0);
+    }
+
+    #[test]
+    fn silhouette_face_contains_only_the_intended_mouth_gap() {
+        let tinted = tinted_source().expect("tinted PNG");
+        assert_eq!(tinted.get_pixel(204, 315)[3], 0xFF);
+        assert_eq!(tinted.get_pixel(140, 403)[3], 0xFF);
+        assert!(tinted.get_pixel(290, 477)[3] < 0x80);
+        assert_eq!(tinted.get_pixel(300, 300)[3], 0xFF);
+    }
+
+    #[test]
+    fn silhouette_uses_one_color() {
+        let tinted = tinted_source().expect("tinted PNG");
         assert!(
             tinted
                 .pixels()

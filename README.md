@@ -52,25 +52,80 @@ state.json                accounts/tokens, instances, download policy, and setti
 
 ## Architecture
 
-The UI and launcher operations are intentionally separate:
+AZULC is split into three layers. The UI describes what is shown, the app layer owns
+state and coordinates events, and services perform filesystem, network, installation,
+and process work.
+
+### UI
+
+The UI is a set of stateless Iced views. Pages read `Launcher` state and emit typed
+`Message` values; they do not perform I/O directly.
 
 ```text
-src/ui/*                                stateless Iced pages and brand components
-src/app/{launch,install,instance}/*     feature-scoped request state and orchestration
-src/app/{message,update,navigation}.rs  root event dispatch and cross-feature coordination
-src/domain.rs                           serializable accounts, instances, settings, and pipeline types
-src/services/auth/*                     account authentication and profile retrieval
-src/services/catalog/*                  provider-neutral catalog models, discovery, and resource installation
-src/services/providers/*                internal CurseForge and Modrinth protocol clients and DTOs
-src/services/download/*                 bounded downloads, mirrors, checksums, and atomic file operations
-src/services/content.rs                 local instance-content scanning
-src/services/insights.rs                dashboard aggregation, version highlights, and service pings
-src/services/loader_catalog.rs          compatible Forge, Fabric, and NeoForge build discovery
-src/services/minecraft.rs               Minecraft metadata, planning, verification, and parallel downloads
-src/services/modpack.rs                 safe CurseForge/Modrinth/MultiMC archive inspection and overrides
-src/services/installer.rs               the continuous loader-aware install state machine
-src/services/launcher.rs                arguments, LWJGL/native merging, process output, and readiness monitoring
+src/ui/
+├── mod.rs                  route-to-view dispatch and overlay composition
+├── shell/                  title bar, sidebar, and resize frame
+├── overlays/               delete confirmation and launch authentication
+├── components/             shared icons, media, catalog, layout, and avatars
+├── instance/               overview, content, settings, and install activity
+├── wizard/                 Minecraft version, loader, and details steps
+├── modpacks/               online discovery and local archive import
+├── resource_browser/       project search and compatible file selection
+├── settings/               downloads, Java, and about pages
+├── home.rs                 dashboard
+├── accounts.rs             account management
+└── brand.rs                application and window artwork
 ```
+
+### App
+
+The app layer owns mutable launcher state, validates stale asynchronous results, and
+routes every user or service event through the root update loop.
+
+```text
+src/app/
+├── mod.rs                  Launcher state, startup tasks, and subscriptions
+├── message.rs              typed events shared by views and operations
+├── update.rs               root event dispatch and route transitions
+├── navigation.rs           routes, tabs, filters, and wizard steps
+├── install/
+│   ├── mod.rs              install jobs, attempts, retries, and pipeline events
+│   ├── wizard.rs           new-instance draft and loader catalog orchestration
+│   └── modpacks.rs         online and local modpack install requests
+├── instance/               instance editing and resource-browser orchestration
+├── launch/                 authentication and concurrent launch sessions
+├── accounts.rs             Microsoft account state transitions
+├── bootstrap.rs            startup catalog and repair tasks
+└── thumbnails.rs           thumbnail request tracking and caching
+```
+
+### Services
+
+Services contain side-effecting and provider-specific work. They accept explicit
+inputs, return domain values or errors, and remain independent of UI navigation.
+
+```text
+src/services/
+├── auth/                   Microsoft OAuth, token validation, and profile retrieval
+├── catalog/                provider-neutral projects, releases, and install plans
+├── providers/              CurseForge and Modrinth protocol clients and DTOs
+├── download/               mirrors, bounded transfers, hashes, and atomic writes
+├── installer.rs            continuous loader-aware installation pipeline
+├── launcher.rs             JVM arguments, natives, process output, and readiness
+├── minecraft.rs            metadata, planning, verification, and base downloads
+├── loader_catalog.rs       compatible Fabric, Forge, and NeoForge builds
+├── modpack.rs              safe archive inspection, manifests, and overrides
+├── content.rs              local instance-content scanning
+├── insights.rs             dashboard aggregation and service health
+├── java.rs                 Java discovery and runtime selection
+├── thumbnail.rs            trusted thumbnail loading and decoding
+├── path_safety.rs          portable path and filename validation
+├── shell.rs                operating-system file reveal helpers
+└── system_resources.rs     CPU and memory discovery
+```
+
+`src/domain.rs` defines the serializable models shared across the layers, while
+`src/storage.rs` owns application paths and persisted launcher state.
 
 An install does not poll disconnected "download" and "install" jobs. Each stage awaits the preceding future:
 
