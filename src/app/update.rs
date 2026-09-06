@@ -31,12 +31,12 @@ impl Launcher {
             }
             Message::WindowOpened(id) => {
                 self.window_id = Some(id);
-                return window::is_maximized(id).map(Message::WindowMaximizedChanged);
+                return inspect_window(id);
             }
             Message::WindowLocated(id) => {
                 self.window_id = id;
                 if let Some(id) = id {
-                    return window::is_maximized(id).map(Message::WindowMaximizedChanged);
+                    return inspect_window(id);
                 }
             }
             Message::WindowResized(id) => {
@@ -915,6 +915,13 @@ impl Launcher {
             }
         }
     }
+}
+
+fn inspect_window(id: window::Id) -> Task<Message> {
+    Task::batch([
+        window::is_maximized(id).map(Message::WindowMaximizedChanged),
+        crate::platform::prepare_window(id).discard(),
+    ])
 }
 
 fn is_current_content_request(
