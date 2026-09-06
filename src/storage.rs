@@ -53,11 +53,20 @@ impl Paths {
         self.instances.join(id.to_string())
     }
 
+    fn bind_instance_dirs(&self, state: &mut PersistedState) {
+        // Instance directories are launcher-owned and derive from the active storage root.
+        for instance in &mut state.instances {
+            instance.game_dir = self.instance_dir(instance.id);
+        }
+    }
+
     pub fn load(&self) -> PersistedState {
-        fs::read_to_string(&self.state_file)
+        let mut state = fs::read_to_string(&self.state_file)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        self.bind_instance_dirs(&mut state);
+        state
     }
 
     pub fn save(&self, state: &PersistedState) -> io::Result<()> {
@@ -133,12 +142,8 @@ fn migrate_blocking_with_default(
         return Err(error);
     }
 
-    for instance in &mut state.instances {
-        if let Ok(relative) = instance.game_dir.strip_prefix(&source_root) {
-            instance.game_dir = destination_root.join(relative);
-        }
-    }
     let new_paths = Paths::from_data_root(destination_root.clone());
+    new_paths.bind_instance_dirs(&mut state);
     if let Err(error) = new_paths.save(&state) {
         let _ = remove_destination_payload(&destination_root, destination_is_default, &locator);
         return Err(format!(
@@ -316,7 +321,10 @@ mod tests {
         fs::write(paths.minecraft.join("marker.txt"), b"minecraft").unwrap();
         let id = Uuid::new_v4();
         let mut state = PersistedState::default();
-        state.instances.push(instance(id, paths.instance_dir(id)));
+        state.instances.push(instance(
+            id,
+            PathBuf::from("a differently spelled old root").join(id.to_string()),
+        ));
         paths.save(&state).unwrap();
 
         let outcome = migrate_blocking_with_default(
@@ -342,6 +350,26 @@ mod tests {
         let selected: PathBuf =
             serde_json::from_slice(&fs::read(default.join("storage-root.json")).unwrap()).unwrap();
         assert_eq!(selected, outcome.paths.data);
+
+        fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn load_repairs_instance_directories_using_the_active_root() {
+        let fixture = fixture();
+        let paths = Paths::from_data_root(fixture.clone());
+        paths.prepare().unwrap();
+        let id = Uuid::new_v4();
+        let mut state = PersistedState::default();
+        state.instances.push(instance(
+            id,
+            PathBuf::from("stale-root").join(id.to_string()),
+        ));
+        paths.save(&state).unwrap();
+
+        let loaded = paths.load();
+
+        assert_eq!(loaded.instances[0].game_dir, paths.instance_dir(id));
 
         fs::remove_dir_all(fixture).unwrap();
     }
