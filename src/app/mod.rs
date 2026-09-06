@@ -7,6 +7,7 @@ mod instance;
 mod launch;
 mod message;
 pub(crate) mod navigation;
+mod storage_migration;
 mod thumbnails;
 mod update;
 
@@ -41,11 +42,22 @@ use std::{
 };
 use uuid::Uuid;
 
+#[derive(Debug, Default)]
+pub(crate) enum StorageMigrationState {
+    #[default]
+    Idle,
+    Pending(std::path::PathBuf),
+    Migrating(std::path::PathBuf),
+}
+
 pub struct Launcher {
     pub(crate) paths: Paths,
     pub(crate) persisted: PersistedState,
     pub(crate) route: Route,
     pub(crate) settings_tab: SettingsTab,
+    pub(crate) storage_migration: StorageMigrationState,
+    pub(crate) storage_migration_error: Option<String>,
+    instance_files_repairing: bool,
     pub(crate) new_instance_tab: NewInstanceTab,
     pub(crate) modpack_tab: ModpackTab,
     pub(crate) wizard_step: WizardStep,
@@ -105,6 +117,9 @@ impl Launcher {
             persisted,
             route: Route::Home,
             settings_tab: SettingsTab::Downloads,
+            storage_migration: StorageMigrationState::Idle,
+            storage_migration_error: None,
+            instance_files_repairing: true,
             new_instance_tab: NewInstanceTab::Minecraft,
             modpack_tab: ModpackTab::Browse,
             wizard_step: WizardStep::Version,

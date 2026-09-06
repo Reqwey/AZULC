@@ -54,6 +54,26 @@ pub(crate) async fn write_atomic(destination: &Path, contents: &[u8]) -> io::Res
     result
 }
 
+/// Blocking counterpart used by storage operations already running off the async executor.
+pub(crate) fn write_atomic_sync(destination: &Path, contents: &[u8]) -> io::Result<()> {
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let staging = staging_path(destination)?;
+    let result = (|| {
+        let mut file = std::fs::File::create(&staging)?;
+        file.write_all(contents)?;
+        file.flush()?;
+        file.sync_all()?;
+        drop(file);
+        replace_file_sync(&staging, destination)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&staging);
+    }
+    result
+}
+
 /// Copies a blocking reader to a sibling staging file, then publishes it.
 pub(crate) fn copy_reader_atomic(
     destination: &Path,

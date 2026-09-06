@@ -153,16 +153,18 @@ pub(crate) enum SettingsTab {
     #[default]
     Downloads,
     Java,
+    Storage,
     About,
 }
 
 impl SettingsTab {
-    pub(crate) const ALL: [Self; 3] = [Self::Downloads, Self::Java, Self::About];
+    pub(crate) const ALL: [Self; 4] = [Self::Downloads, Self::Java, Self::Storage, Self::About];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Downloads => "Downloads",
             Self::Java => "Java",
+            Self::Storage => "Storage",
             Self::About => "About",
         }
     }

@@ -159,6 +159,10 @@ impl LaunchRegistry {
             .is_some_and(|session| session.active)
     }
 
+    pub(in crate::app) fn has_active(&self) -> bool {
+        self.sessions.values().any(|session| session.active)
+    }
+
     pub(super) fn finish(&mut self, attempt: &LaunchAttempt) {
         let is_current_attempt = self
             .sessions

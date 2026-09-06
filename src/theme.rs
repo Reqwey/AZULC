@@ -194,6 +194,22 @@ pub fn nav_button(_: &Theme, status: button::Status) -> button::Style {
     }
 }
 
+pub fn acknowledgement_list_button(_: &Theme, status: button::Status) -> button::Style {
+    let (background, text_color) = match status {
+        button::Status::Hovered => (Some(Background::Color(LAVENDER_WASH)), LAVENDER_SOFT),
+        button::Status::Pressed => (Some(Background::Color(LAVENDER_WASH)), TEXT),
+        button::Status::Disabled => (None, DISABLED),
+        button::Status::Active => (None, LAVENDER),
+    };
+
+    button::Style {
+        background,
+        text_color,
+        border: outline(Color::TRANSPARENT, 0.0, 0.0),
+        ..Default::default()
+    }
+}
+
 pub fn primary_button(_: &Theme, status: button::Status) -> button::Style {
     let (background, text_color, shadow) = match status {
         button::Status::Active => (
@@ -270,17 +286,48 @@ pub fn thumbnail_frame(_: &Theme) -> container::Style {
 }
 
 pub fn window_button(_: &Theme, status: button::Status) -> button::Style {
-    let (background, text_color) = match status {
-        button::Status::Hovered => (Some(Background::Color(PANEL_ALT)), TEXT),
-        button::Status::Pressed => (Some(Background::Color(LAVENDER_WASH)), LAVENDER),
-        button::Status::Disabled => (None, DISABLED),
-        button::Status::Active => (None, MUTED),
+    let (background, text_color, border_color, border_width) = match status {
+        button::Status::Hovered => (Some(Background::Color(PANEL_ALT)), TEXT, BORDER, 1.0),
+        button::Status::Pressed => (
+            Some(Background::Color(LAVENDER_WASH)),
+            LAVENDER,
+            BORDER,
+            1.0,
+        ),
+        button::Status::Disabled => (None, DISABLED, Color::TRANSPARENT, 0.0),
+        button::Status::Active => (None, MUTED, Color::TRANSPARENT, 0.0),
     };
 
     button::Style {
         background,
         text_color,
-        border: outline(Color::TRANSPARENT, 0.0, 4.0),
+        border: outline(border_color, border_width, 0.0),
+        ..Default::default()
+    }
+}
+
+pub fn close_window_button(_: &Theme, status: button::Status) -> button::Style {
+    let (background, text_color, border_color, border_width) = match status {
+        button::Status::Hovered => (
+            Some(Background::Color(WINDOW_CLOSE_HOVER)),
+            TEXT,
+            DANGER,
+            1.0,
+        ),
+        button::Status::Pressed => (
+            Some(Background::Color(WINDOW_CLOSE_PRESSED)),
+            TEXT,
+            DANGER,
+            1.0,
+        ),
+        button::Status::Disabled => (None, DISABLED, Color::TRANSPARENT, 0.0),
+        button::Status::Active => (None, MUTED, Color::TRANSPARENT, 0.0),
+    };
+
+    button::Style {
+        background,
+        text_color,
+        border: outline(border_color, border_width, 0.0),
         ..Default::default()
     }
 }

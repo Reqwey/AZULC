@@ -1,7 +1,7 @@
 //! Top-level message dispatcher for application state transitions.
 
 use super::{
-    Launcher, Message,
+    Launcher, Message, StorageMigrationState,
     accounts::apply_microsoft_account_appearance,
     install::WizardDraft,
     navigation::{ModpackTab, NewInstanceTab, Route, VersionFilter, WizardStep},
@@ -22,7 +22,13 @@ use std::sync::{
 impl Launcher {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Navigate(route) => return self.navigate(route),
+            Message::Navigate(route) => {
+                if matches!(self.storage_migration, StorageMigrationState::Migrating(_)) {
+                    self.notice = Some("Wait for the storage migration to finish.".into());
+                } else {
+                    return self.navigate(route);
+                }
+            }
             Message::WindowOpened(id) => {
                 self.window_id = Some(id);
                 return window::is_maximized(id).map(Message::WindowMaximizedChanged);
@@ -617,7 +623,7 @@ impl Launcher {
                     self.save();
                 }
             }
-            Message::InstanceVersionFilesRepaired => {}
+            Message::InstanceVersionFilesRepaired => self.instance_files_repairing = false,
             Message::EditInstanceName(id, value) => {
                 self.edit_instance(id, |instance| instance.name = value)
             }
@@ -801,7 +807,16 @@ impl Launcher {
                     Err(error) => self.notice = Some(format!("Could not delete instance: {error}")),
                 }
             }
-            Message::SettingsTabSelected(tab) => self.settings_tab = tab,
+            Message::SettingsTabSelected(tab) => {
+                if !matches!(self.storage_migration, StorageMigrationState::Migrating(_)) {
+                    self.settings_tab = tab;
+                }
+            }
+            Message::ChooseStorageRoot => return self.choose_storage_root(),
+            Message::StorageRootPicked(path) => self.select_storage_root(path),
+            Message::CancelStorageMigration => self.cancel_storage_migration(),
+            Message::ConfirmStorageMigration => return self.confirm_storage_migration(),
+            Message::StorageMigrated(result) => return self.finish_storage_migration(result),
             Message::NewInstanceTabSelected(tab) => {
                 self.new_instance_tab = tab;
                 if tab == NewInstanceTab::Modpacks

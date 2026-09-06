@@ -19,6 +19,7 @@ use crate::{
         system_resources::SystemResources,
         thumbnail,
     },
+    storage::MigrationOutcome,
 };
 use iced::window;
 use std::path::PathBuf;
@@ -145,6 +146,11 @@ pub enum Message {
     ConfirmDeleteInstance(Uuid),
     Deleted(Uuid, Result<(), String>),
     SettingsTabSelected(SettingsTab),
+    ChooseStorageRoot,
+    StorageRootPicked(Option<PathBuf>),
+    ConfirmStorageMigration,
+    CancelStorageMigration,
+    StorageMigrated(Result<MigrationOutcome, String>),
     NewInstanceTabSelected(NewInstanceTab),
     ModpackTabSelected(ModpackTab),
     DownloadSourcePicked(DownloadSource),

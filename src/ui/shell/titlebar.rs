@@ -90,7 +90,7 @@ fn window_button<'a>(
         .padding(0)
         .on_press(message)
         .style(if danger {
-            theme::danger_window_button
+            theme::close_window_button
         } else {
             theme::window_button
         })
