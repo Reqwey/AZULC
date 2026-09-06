@@ -14,7 +14,7 @@ fn main() -> iced::Result {
     let mut window_settings = iced::window::Settings {
         size: iced::Size::new(1360.0, 820.0),
         min_size: Some(iced::Size::new(1100.0, 700.0)),
-        decorations: false,
+        decorations: cfg!(target_os = "macos"),
         resizable: true,
         icon: ui::brand::window_icon(),
         ..Default::default()
@@ -23,6 +23,12 @@ fn main() -> iced::Result {
     {
         window_settings.platform_specific.corner_preference =
             iced::window::settings::platform::CornerPreference::DoNotRound;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        window_settings.platform_specific.title_hidden = true;
+        window_settings.platform_specific.titlebar_transparent = true;
+        window_settings.platform_specific.fullsize_content_view = true;
     }
 
     iced::application(

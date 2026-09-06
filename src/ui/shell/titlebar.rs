@@ -6,8 +6,35 @@ use crate::{
 use iced::widget::{Space, button, column, container, mouse_area, row, text};
 use iced::{Alignment, Element, Fill, alignment};
 
+#[cfg(not(target_os = "macos"))]
 use icons::WindowControl;
 
+#[cfg(target_os = "macos")]
+pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
+    const TRAFFIC_LIGHT_CLEARANCE: f32 = 84.0;
+
+    let title = container(text("Azusa Minecraft Launcher").align_y(Alignment::Center))
+        .padding([0, 12])
+        .width(Fill)
+        .height(44)
+        .align_y(alignment::Vertical::Center);
+
+    mouse_area(
+        container(row![
+            Space::new().width(TRAFFIC_LIGHT_CLEARANCE),
+            title,
+            account_button(app)
+        ])
+        .height(44)
+        .width(Fill)
+        .style(theme::titlebar),
+    )
+    .on_press(Message::DragWindow)
+    .on_double_click(Message::ToggleMaximize)
+    .into()
+}
+
+#[cfg(not(target_os = "macos"))]
 pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     let title = container(text("Azusa Minecraft Launcher").align_y(Alignment::Center))
         .padding([0, 16])
@@ -79,6 +106,7 @@ fn account_button(app: &Launcher) -> Element<'_, Message> {
     .into()
 }
 
+#[cfg(not(target_os = "macos"))]
 fn window_button<'a>(
     control: WindowControl,
     message: Message,

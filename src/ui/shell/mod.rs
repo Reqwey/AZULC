@@ -54,6 +54,12 @@ pub(super) fn view<'a>(app: &'a Launcher, page: Element<'a, Message>) -> Element
     shell.into()
 }
 
+#[cfg(target_os = "macos")]
+pub(super) fn frame<'a>(_: &Launcher, content: Element<'a, Message>) -> Element<'a, Message> {
+    content
+}
+
+#[cfg(not(target_os = "macos"))]
 pub(super) fn frame<'a>(app: &Launcher, content: Element<'a, Message>) -> Element<'a, Message> {
     if app.window_maximized {
         content
