@@ -41,7 +41,7 @@ impl Launcher {
             }
             Message::WindowResized(id) => {
                 if self.window_id == Some(id) {
-                    return window::is_maximized(id).map(Message::WindowMaximizedChanged);
+                    return inspect_window(id);
                 }
             }
             Message::WindowMaximizedChanged(maximized) => self.window_maximized = maximized,

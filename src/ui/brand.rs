@@ -7,48 +7,25 @@ use std::sync::OnceLock;
 const HERO_HEIGHT: f32 = 258.0;
 const WORDMARK_WIDTH: f32 = 540.0;
 const WORDMARK_HEIGHT: f32 = 132.0;
-const ICON_SIZE: usize = 96;
-const ICON_OUTER_RADIUS: f32 = 46.0;
-const ICON_INNER_RADIUS: f32 = 43.0;
+#[cfg(test)]
 const ICON_BORDER: ::image::Rgba<u8> = ::image::Rgba([0xB8, 0x9C, 0xFF, 0xFF]);
 const GIRL_SOURCE: &[u8] = include_bytes!("../../assets/brand/girl-source.png");
+pub(crate) const APPLICATION_ICON_PNG: &[u8] = include_bytes!("../../assets/brand/app-icon.png");
 static SILHOUETTE: OnceLock<iced_image::Handle> = OnceLock::new();
 
-/// Builds the taskbar/window icon from the supplied silhouette source.
+/// Loads the prebuilt taskbar/window icon.
 pub(crate) fn window_icon() -> Option<iced::window::Icon> {
     let icon = window_icon_image()?;
-    iced::window::icon::from_rgba(icon.into_raw(), ICON_SIZE as u32, ICON_SIZE as u32).ok()
+    let (width, height) = icon.dimensions();
+    iced::window::icon::from_rgba(icon.into_raw(), width, height).ok()
 }
 
 fn window_icon_image() -> Option<::image::RgbaImage> {
-    let source = tinted_source()?;
-    let avatar =
-        ::image::imageops::resize(&source, 66, 69, ::image::imageops::FilterType::Lanczos3);
-    let mut icon = ::image::RgbaImage::from_pixel(
-        ICON_SIZE as u32,
-        ICON_SIZE as u32,
-        ::image::Rgba([0x13, 0x10, 0x1E, 0xFF]),
-    );
-    ::image::imageops::overlay(&mut icon, &avatar, 15, 13);
-
-    let center = ICON_SIZE as f32 / 2.0;
-    for (x, y, pixel) in icon.enumerate_pixels_mut() {
-        let x = x as f32 + 0.5;
-        let y = y as f32 + 0.5;
-        if !inside_regular_hexagon(x, y, center, ICON_OUTER_RADIUS) {
-            *pixel = ::image::Rgba([0, 0, 0, 0]);
-        } else if !inside_regular_hexagon(x, y, center, ICON_INNER_RADIUS) {
-            *pixel = ICON_BORDER;
-        }
-    }
-    Some(icon)
-}
-
-fn inside_regular_hexagon(x: f32, y: f32, center: f32, radius: f32) -> bool {
-    let dx = (x - center).abs();
-    let dy = (y - center).abs();
-    let sqrt_three = 3.0_f32.sqrt();
-    dx <= sqrt_three * radius / 2.0 && dy <= radius && dx / sqrt_three + dy <= radius
+    Some(
+        ::image::load_from_memory_with_format(APPLICATION_ICON_PNG, ::image::ImageFormat::Png)
+            .ok()?
+            .into_rgba8(),
+    )
 }
 
 /// Builds the large AZULC wordmark and exact supplied-avatar silhouette lockup.
@@ -149,22 +126,43 @@ fn tinted_source() -> Option<::image::RgbaImage> {
 mod tests {
     use super::*;
 
+    const EXPECTED_ICON_SIZE: usize = 256;
+
     #[test]
-    fn generated_window_icon_has_valid_rgba_dimensions() {
+    fn prebuilt_window_icon_has_valid_rgba_dimensions() {
         let (rgba, size) = window_icon()
             .expect("silhouette icon should be valid")
             .into_raw();
-        assert_eq!(size.width, ICON_SIZE as u32);
-        assert_eq!(size.height, ICON_SIZE as u32);
-        assert_eq!(rgba.len(), ICON_SIZE * ICON_SIZE * 4);
+        assert_eq!(size.width, EXPECTED_ICON_SIZE as u32);
+        assert_eq!(size.height, EXPECTED_ICON_SIZE as u32);
+        assert_eq!(rgba.len(), EXPECTED_ICON_SIZE * EXPECTED_ICON_SIZE * 4);
+    }
+
+    #[test]
+    fn prebuilt_application_icon_is_a_valid_png() {
+        let icon =
+            ::image::load_from_memory_with_format(APPLICATION_ICON_PNG, ::image::ImageFormat::Png)
+                .expect("valid PNG");
+        assert_eq!(
+            (icon.width(), icon.height()),
+            (EXPECTED_ICON_SIZE as u32, EXPECTED_ICON_SIZE as u32)
+        );
+    }
+
+    #[test]
+    fn prebuilt_macos_application_icon_is_a_valid_icns_container() {
+        const ICON: &[u8] = include_bytes!("../../assets/brand/app-icon.icns");
+        let declared_size =
+            u32::from_be_bytes(ICON[4..8].try_into().expect("ICNS size field")) as usize;
+        assert_eq!((&ICON[..4], declared_size), (&b"icns"[..], ICON.len()));
     }
 
     #[test]
     fn window_icon_has_a_transparent_exterior_and_purple_hex_border() {
         let icon = window_icon_image().expect("window icon image");
         assert_eq!(icon.get_pixel(0, 0), &::image::Rgba([0, 0, 0, 0]));
-        assert_eq!(icon.get_pixel(48, 2), &ICON_BORDER);
-        assert_ne!(icon.get_pixel(48, 48), &ICON_BORDER);
+        assert_eq!(icon.get_pixel(128, 8), &ICON_BORDER);
+        assert_ne!(icon.get_pixel(128, 128), &ICON_BORDER);
     }
 
     #[test]

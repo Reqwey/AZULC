@@ -41,6 +41,14 @@ Build an optimized binary:
 cargo build --release
 ```
 
+To create a native application package with the platform icon (`.app` on macOS), install
+[`cargo-bundle`](https://github.com/burtonageo/cargo-bundle) and run:
+
+```powershell
+cargo install cargo-bundle
+cargo bundle --release
+```
+
 Application data uses the operating system's application-data location. On Windows this is normally `%APPDATA%\AZULC\AZULC`:
 
 ```text

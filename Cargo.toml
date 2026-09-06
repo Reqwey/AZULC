@@ -5,6 +5,15 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Azusa Minecraft Launcher — a next-generation lightweight, high-performance Minecraft launcher and technology validation platform"
 
+[package.metadata.bundle]
+name = "AZULC"
+identifier = "xyz.reqwey.azulc"
+icon = [
+    "assets/brand/app-icon.ico",
+    "assets/brand/app-icon.icns",
+    "assets/brand/app-icon.png",
+]
+
 [dependencies]
 chrono = "0.4"
 directories = "6.0"
