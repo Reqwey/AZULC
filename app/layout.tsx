@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import Motion from './motion';
 export const metadata: Metadata = {
   title: 'AZULC · Azusa Minecraft Launcher',
   description:
@@ -11,7 +12,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Motion />
+      </body>
     </html>
   );
 }

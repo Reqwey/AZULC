@@ -122,20 +122,25 @@ export default function Home() {
             <div className="hero-note">
               <span className="wordmark">AZULC</span>
               <span>Azusa Minecraft Launcher</span>
-              <span className="note-line">All Rust / Native Iced UI</span>
-              <span className="status">▪ GPL-3.0-or-later · Open source</span>
+              <span className="note-line">Built on Iced UI</span>
+              <span className="status">▪ GPL-3.0-or-later</span>
             </div>
           </div>
           <div className="hero-screen">
-            <div className="window-label">
-              <span>▪ AZUSA MINECRAFT LAUNCHER</span>
-              <span>HOME / APP SCREENSHOT</span>
-            </div>
-            <Screen
-              name="home"
-              caption="Home · Your instances, worlds, and play time"
-              eager
-            />
+            <a
+              href="/screenshots/AZULC-home.png"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View full home screenshot"
+            >
+              <img
+                src="/screenshots/AZULC-home.png"
+                alt="Home · Your instances, worlds, and play time"
+                width="2380"
+                height="1435"
+                loading="eager"
+              />
+            </a>
           </div>
           <div className="compatibility">
             <span>Play your way</span>

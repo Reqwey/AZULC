@@ -196,16 +196,13 @@ h1 em {
   color: var(--green);
 }
 .hero-screen {
-  border: 1px solid var(--purple);
   box-shadow: 8px 8px 0 var(--shadow);
 }
-.window-label {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 17px;
-  background: var(--raised);
-  font: 12px Space;
-  color: var(--muted);
+.hero-screen a {
+  display: block;
+}
+.hero-screen img {
+  width: 100%;
 }
 .screen {
   min-width: 0;
@@ -235,9 +232,6 @@ h1 em {
 .screen figcaption span:last-child {
   white-space: nowrap;
   color: var(--purple);
-}
-.hero-screen .screen {
-  border: 0;
 }
 .compatibility {
   display: flex;
@@ -546,9 +540,6 @@ h2 {
   .actions {
     gap: 25px;
   }
-  .window-label > span:last-child {
-    display: none;
-  }
   .screen figcaption {
     flex-wrap: wrap;
     padding: 8px;
@@ -755,13 +746,101 @@ h2 {
   .text-link {
     font-size: 13px;
   }
-  .window-label {
-    font-size: 10px;
-  }
   .eyebrow {
     overflow-wrap: anywhere;
   }
   .download h2 {
     font-size: 32px;
+  }
+}
+
+/* Short, deliberate movement echoes the launcher's offset pixel shadows. */
+@keyframes enter-scene {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes settle-wordmark {
+  from {
+    opacity: 0;
+    transform: translate(8px, -8px);
+    text-shadow: 0 0 0 var(--shadow);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0);
+    text-shadow:
+      5px 5px 0 var(--shadow),
+      10px 10px 0 #21192f;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero > .eyebrow {
+    animation: enter-scene 500ms ease-out both;
+  }
+  .hero-copy > div:first-child {
+    animation: enter-scene 650ms 80ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .hero-note > .wordmark {
+    animation: settle-wordmark 550ms 180ms steps(6, end) both;
+  }
+  .hero-screen {
+    animation: enter-scene 750ms 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .platforms a {
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+  .platforms b {
+    transition: transform 180ms ease;
+  }
+  .text-link {
+    display: inline-block;
+    transition:
+      color 180ms ease,
+      transform 180ms ease;
+  }
+  .button:active {
+    transform: translate(5px, 5px);
+    box-shadow: 0 0 0 var(--shadow);
+  }
+  nav a {
+    position: relative;
+  }
+  nav a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -5px;
+    height: 2px;
+    background: var(--purple);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 180ms steps(5, end);
+  }
+  nav a:focus-visible::after {
+    transform: scaleX(1);
+  }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  nav a:hover::after {
+    transform: scaleX(1);
+  }
+  .text-link:hover {
+    transform: translateX(3px);
+  }
+  .platforms a:hover {
+    transform: translate(-2px, -2px);
+  }
+  .platforms a:hover b {
+    transform: translate(2px, -2px);
   }
 }
