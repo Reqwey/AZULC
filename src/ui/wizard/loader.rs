@@ -33,11 +33,13 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
                                 theme::MUTED
                             })
                     ]
-                    .spacing(3),
-                    Space::new().width(Fill),
-                    text(if selected { "SELECTED" } else { ">" })
+                    .spacing(3)
+                    .width(Fill),
+                    text(if selected { "●" } else { ">" })
                         .font(theme::BODY_BOLD)
                         .size(12)
+                        .width(16)
+                        .align_x(alignment::Horizontal::Right)
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),
