@@ -1,4 +1,7 @@
-use crate::{domain::PersistedState, services::download::file_ops};
+use crate::{
+    domain::{InstanceOrigin, PersistedState},
+    services::{download::file_ops, modpack},
+};
 use directories::ProjectDirs;
 use std::{
     fs, io,
@@ -57,6 +60,14 @@ impl Paths {
         // Instance directories are launcher-owned and derive from the active storage root.
         for instance in &mut state.instances {
             instance.game_dir = self.instance_dir(instance.id);
+            if matches!(
+                &instance.origin,
+                InstanceOrigin::Modpack { provider, .. } if provider.eq_ignore_ascii_case("Modrinth")
+            ) && instance.settings.modpack_memory_reference_mb.is_none()
+            {
+                instance.settings.modpack_memory_reference_mb =
+                    modpack::installed_modrinth_memory_reference(&instance.game_dir);
+            }
         }
     }
 
@@ -370,6 +381,44 @@ mod tests {
         let loaded = paths.load();
 
         assert_eq!(loaded.instances[0].game_dir, paths.instance_dir(id));
+
+        fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn load_backfills_a_memory_reference_for_existing_modrinth_packs() {
+        let fixture = fixture();
+        let paths = Paths::from_data_root(fixture.clone());
+        paths.prepare().unwrap();
+        let id = Uuid::new_v4();
+        let mut installed = instance(id, paths.instance_dir(id));
+        installed.origin = InstanceOrigin::Modpack {
+            provider: "Modrinth".into(),
+            project_id: None,
+            project_name: "Large Pack".into(),
+            version_id: None,
+            version_name: None,
+        };
+        let config_dir = paths.instance_dir(id).join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("memorysettings.json"),
+            br#"{
+                // Explicit client floor supplied by the pack.
+                "minimumClient":{"minimumClient":6000}
+            }"#,
+        )
+        .unwrap();
+        let mut state = PersistedState::default();
+        state.instances.push(installed);
+        paths.save(&state).unwrap();
+
+        let loaded = paths.load();
+
+        assert_eq!(
+            loaded.instances[0].settings.modpack_memory_reference_mb,
+            Some(6000)
+        );
 
         fs::remove_dir_all(fixture).unwrap();
     }

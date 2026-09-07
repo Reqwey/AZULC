@@ -10,6 +10,7 @@ use std::{
 const MAX_ARCHIVE_ENTRIES: usize = 20_000;
 const MAX_UNCOMPRESSED_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_MEMORY_SETTINGS_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModpackFormat {
@@ -25,6 +26,7 @@ pub struct ModpackMetadata {
     pub author: Option<String>,
     pub minecraft_version: String,
     pub loader: LoaderSpec,
+    pub memory_reference_mb: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,15 +114,15 @@ fn inspect_reader<R: Read + Seek>(reader: R, fallback_name: &str) -> Result<Modp
     let entries = validate_archive(&mut archive)?;
     let manifest = find_manifest(&entries)?;
 
-    match manifest {
+    let mut plan = match &manifest {
         ManifestLocation::CurseForge(index) => {
             let manifest: CurseForgeManifest =
-                read_json_entry(&mut archive, index, "manifest.json")?;
+                read_json_entry(&mut archive, *index, "manifest.json")?;
             plan_curseforge(manifest)
         }
         ManifestLocation::Modrinth(index) => {
             let manifest: ModrinthManifest =
-                read_json_entry(&mut archive, index, "modrinth.index.json")?;
+                read_json_entry(&mut archive, *index, "modrinth.index.json")?;
             plan_modrinth(manifest)
         }
         ManifestLocation::MultiMc {
@@ -129,11 +131,95 @@ fn inspect_reader<R: Read + Seek>(reader: R, fallback_name: &str) -> Result<Modp
             base,
         } => {
             let manifest: MultiMcManifest =
-                read_json_entry(&mut archive, manifest_index, "mmc-pack.json")?;
-            let config = read_text_entry(&mut archive, config_index, "instance.cfg")?;
-            plan_multimc(manifest, &config, &base, fallback_name)
+                read_json_entry(&mut archive, *manifest_index, "mmc-pack.json")?;
+            let config = read_text_entry(&mut archive, *config_index, "instance.cfg")?;
+            plan_multimc(manifest, &config, base, fallback_name)
+        }
+    }?;
+    if plan.format == ModpackFormat::Modrinth
+        && let Some(memory_mb) = embedded_modrinth_memory_reference(&mut archive, &entries, &plan)
+    {
+        plan.metadata.memory_reference_mb = Some(memory_mb);
+    }
+    Ok(plan)
+}
+
+fn embedded_modrinth_memory_reference<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    entries: &[ArchiveEntry],
+    plan: &ModpackPlan,
+) -> Option<u32> {
+    let wanted = format!("{}/config/memorysettings.json", plan.overrides_prefix);
+    let entry = entries.iter().find(|entry| {
+        !entry.is_dir && archive_path_string(&entry.path).eq_ignore_ascii_case(&wanted)
+    })?;
+    let bytes = read_entry(
+        archive,
+        entry.index,
+        "memorysettings.json",
+        MAX_MEMORY_SETTINGS_BYTES,
+    )
+    .ok()?;
+    parse_modrinth_memory_reference(&bytes)
+}
+
+/// Reads the explicit client memory floor used by the Memory Settings mod.
+/// Invalid or unrelated files are deliberately ignored because this metadata is
+/// an optional launch hint, not a reason to reject an otherwise valid pack.
+pub(crate) fn installed_modrinth_memory_reference(game_dir: &Path) -> Option<u32> {
+    let mut file = File::open(game_dir.join("config").join("memorysettings.json")).ok()?;
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(MAX_MEMORY_SETTINGS_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_MEMORY_SETTINGS_BYTES {
+        return None;
+    }
+    parse_modrinth_memory_reference(&bytes)
+}
+
+fn parse_modrinth_memory_reference(bytes: &[u8]) -> Option<u32> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&strip_json_comments(text)).ok()?;
+    let memory_mb = value.get("minimumClient")?.get("minimumClient")?.as_u64()?;
+    u32::try_from(memory_mb).ok().filter(|value| *value > 0)
+}
+
+fn strip_json_comments(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut characters = text.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while let Some(character) = characters.next() {
+        if in_string {
+            output.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            output.push(character);
+        } else if character == '/' && characters.peek() == Some(&'/') {
+            characters.next();
+            for comment_character in characters.by_ref() {
+                if comment_character == '\n' {
+                    output.push('\n');
+                    break;
+                }
+            }
+        } else {
+            output.push(character);
         }
     }
+    output
 }
 
 fn validate_archive<R: Read + Seek>(
@@ -294,6 +380,8 @@ struct CurseForgeMinecraft {
     version: String,
     #[serde(default)]
     mod_loaders: Vec<CurseForgeLoader>,
+    #[serde(default)]
+    recommended_ram: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -344,6 +432,10 @@ fn plan_curseforge(manifest: CurseForgeManifest) -> Result<ModpackPlan, String> 
                 "CurseForge Minecraft version",
             )?,
             loader,
+            memory_reference_mb: manifest
+                .minecraft
+                .recommended_ram
+                .filter(|memory_mb| *memory_mb > 0),
         },
         files: manifest
             .files
@@ -486,6 +578,7 @@ fn plan_modrinth(manifest: ModrinthManifest) -> Result<ModpackPlan, String> {
             author: None,
             minecraft_version,
             loader,
+            memory_reference_mb: None,
         },
         files,
         overrides_prefix: "overrides".to_owned(),
@@ -613,10 +706,23 @@ fn plan_multimc(
             author: config_value(&config, &["author"]).map(str::to_owned),
             minecraft_version,
             loader,
+            memory_reference_mb: multimc_memory_requirement(&config),
         },
         files: Vec::new(),
         overrides_prefix: archive_path_string(&override_path),
     })
+}
+
+fn multimc_memory_requirement(config: &BTreeMap<String, String>) -> Option<u32> {
+    let override_memory = config_value(config, &["OverrideMemory"])?;
+    if !override_memory.eq_ignore_ascii_case("true") && override_memory != "1" {
+        return None;
+    }
+    config_value(config, &["MaxMemAlloc"])?
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
 }
 
 fn parse_multimc_loader(components: &[MultiMcComponent]) -> Result<LoaderSpec, String> {
@@ -934,6 +1040,46 @@ mod tests {
     }
 
     #[test]
+    fn curseforge_uses_recommended_ram_and_ignores_memorysettings() {
+        let manifest = br#"{
+            "name":"Large Pack",
+            "minecraft":{"version":"1.20.1","modLoaders":[],"recommendedRam":8192},
+            "files":[],
+            "overrides":"overrides"
+        }"#;
+        let memory_settings = br#"{
+            // This format is JSON with comments in newer pack releases.
+            "minimumClient":{"minimumClient":6000},
+            "maximumClient":{"maximumClient":32000}
+        }"#;
+        let bytes = zip_fixture(&[
+            ("manifest.json", manifest),
+            ("overrides/config/memorysettings.json", memory_settings),
+        ]);
+        let plan = inspect_reader(Cursor::new(bytes), "fallback").expect("pack should parse");
+
+        assert_eq!(plan.metadata.memory_reference_mb, Some(8192));
+    }
+
+    #[test]
+    fn curseforge_without_recommended_ram_has_no_memory_reference() {
+        let manifest = br#"{
+            "name":"Pack With Bad Hint",
+            "minecraft":{"version":"1.20.1","modLoaders":[]},
+            "files":[],
+            "overrides":"overrides"
+        }"#;
+        let bytes = zip_fixture(&[
+            ("manifest.json", manifest),
+            ("overrides/config/memorysettings.json", b"not json"),
+        ]);
+
+        let plan = inspect_reader(Cursor::new(bytes), "fallback").expect("pack should parse");
+
+        assert_eq!(plan.metadata.memory_reference_mb, None);
+    }
+
+    #[test]
     fn inspects_modrinth_pack() {
         let manifest = br#"{
             "formatVersion":1,
@@ -957,6 +1103,27 @@ mod tests {
             plan.files.as_slice(),
             [ModpackFile::Direct { path, size: 42, .. }] if path == Path::new("mods/example.jar")
         ));
+    }
+
+    #[test]
+    fn modrinth_reads_memorysettings_from_overrides() {
+        let manifest = br#"{
+            "versionId":"2.0",
+            "name":"Large Fabric Pack",
+            "files":[],
+            "dependencies":{"minecraft":"1.20.1","fabric-loader":"0.16.10"}
+        }"#;
+        let memory_settings = br#"{
+            // Modrinth memory reference supplied by the pack.
+            "minimumClient":{"minimumClient":6000}
+        }"#;
+        let bytes = zip_fixture(&[
+            ("modrinth.index.json", manifest),
+            ("overrides/config/memorysettings.json", memory_settings),
+        ]);
+        let plan = inspect_reader(Cursor::new(bytes), "fallback").expect("pack should parse");
+
+        assert_eq!(plan.metadata.memory_reference_mb, Some(6000));
     }
 
     #[test]
@@ -1037,7 +1204,7 @@ mod tests {
                 {"uid":"net.neoforged","cachedVersion":"47.1.106"}
             ]
         }"#;
-        let config = b"name=Prism Pack\nManagedPackVersionName=3.0\nauthor=Azulc\n";
+        let config = b"name=Prism Pack\nManagedPackVersionName=3.0\nauthor=Azulc\nOverrideMemory=true\nMaxMemAlloc=8192\n";
         let bytes = zip_fixture(&[
             ("Prism Pack/mmc-pack.json", manifest),
             ("Prism Pack/instance.cfg", config),
@@ -1047,7 +1214,20 @@ mod tests {
         assert_eq!(plan.format, ModpackFormat::MultiMc);
         assert_eq!(plan.metadata.name, "Prism Pack");
         assert_eq!(plan.metadata.loader.kind, LoaderKind::NeoForge);
+        assert_eq!(plan.metadata.memory_reference_mb, Some(8192));
         assert_eq!(plan.overrides_prefix, "Prism Pack/.minecraft");
+    }
+
+    #[test]
+    fn ignores_multimc_default_memory_when_override_is_disabled() {
+        let manifest = br#"{
+            "components":[{"uid":"net.minecraft","version":"1.20.1"}]
+        }"#;
+        let config = b"name=Prism Pack\nOverrideMemory=false\nMaxMemAlloc=8192\n";
+        let bytes = zip_fixture(&[("mmc-pack.json", manifest), ("instance.cfg", config)]);
+        let plan = inspect_reader(Cursor::new(bytes), "fallback").expect("pack should parse");
+
+        assert_eq!(plan.metadata.memory_reference_mb, None);
     }
 
     #[test]

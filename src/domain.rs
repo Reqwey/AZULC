@@ -183,6 +183,8 @@ pub struct InstanceSettings {
     pub fullscreen: bool,
     pub auto_memory: bool,
     pub max_memory_mb: u32,
+    #[serde(default)]
+    pub modpack_memory_reference_mb: Option<u32>,
     pub custom_window_title: String,
     pub custom_info: String,
 }
@@ -200,6 +202,7 @@ impl Default for InstanceSettings {
             fullscreen: false,
             auto_memory: true,
             max_memory_mb: DEFAULT_GAME_MEMORY_MB,
+            modpack_memory_reference_mb: None,
             custom_window_title: String::new(),
             custom_info: String::new(),
         }

@@ -3,7 +3,6 @@ use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 
 const MIB: u64 = 1024 * 1024;
 pub const MIN_GAME_MEMORY_MB: u32 = 512;
-const SYSTEM_MEMORY_RESERVE_MB: u32 = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SystemResources {
@@ -24,14 +23,19 @@ impl Default for SystemResources {
 
 impl SystemResources {
     pub fn memory_limit_mb(self) -> u32 {
-        self.total_memory_mb
-            .saturating_sub(SYSTEM_MEMORY_RESERVE_MB)
-            .max(MIN_GAME_MEMORY_MB)
+        self.available_memory_mb.max(MIN_GAME_MEMORY_MB)
     }
 
-    pub fn game_memory_mb(self, automatic: bool, configured_mb: u32) -> u32 {
+    pub fn game_memory_mb(
+        self,
+        automatic: bool,
+        configured_mb: u32,
+        modpack_memory_reference_mb: Option<u32>,
+    ) -> u32 {
         let requested = if automatic {
-            DEFAULT_GAME_MEMORY_MB
+            modpack_memory_reference_mb
+                .unwrap_or_default()
+                .max(DEFAULT_GAME_MEMORY_MB)
         } else {
             configured_mb
         };
@@ -76,35 +80,49 @@ mod tests {
     }
 
     #[test]
-    fn automatic_memory_is_not_reduced_by_temporarily_low_available_memory() {
+    fn automatic_memory_does_not_exceed_current_available_memory() {
         let resources = SystemResources {
             available_memory_mb: 1800,
             total_memory_mb: 16 * 1024,
             cpu_threads: 1,
         };
 
-        assert_eq!(resources.game_memory_mb(true, 8192), DEFAULT_GAME_MEMORY_MB);
+        assert_eq!(resources.game_memory_mb(true, 8192, Some(6000)), 1800);
     }
 
     #[test]
-    fn memory_limit_reserves_space_for_the_operating_system() {
+    fn automatic_memory_uses_the_default_when_enough_memory_is_available() {
         let resources = SystemResources {
-            available_memory_mb: 4096,
-            total_memory_mb: 4096,
+            available_memory_mb: 8192,
+            total_memory_mb: 16 * 1024,
             cpu_threads: 1,
         };
 
-        assert_eq!(resources.memory_limit_mb(), 3072);
+        assert_eq!(
+            resources.game_memory_mb(true, 2048, None),
+            DEFAULT_GAME_MEMORY_MB
+        );
     }
 
     #[test]
-    fn manual_memory_is_capped_by_the_stable_system_limit() {
+    fn automatic_memory_honors_a_modpack_reference_above_the_default() {
+        let resources = SystemResources {
+            available_memory_mb: 10 * 1024,
+            total_memory_mb: 16 * 1024,
+            cpu_threads: 1,
+        };
+
+        assert_eq!(resources.game_memory_mb(true, 2048, Some(6000)), 6000);
+    }
+
+    #[test]
+    fn manual_memory_is_capped_by_current_available_memory() {
         let resources = SystemResources {
             available_memory_mb: 1024,
             total_memory_mb: 8192,
             cpu_threads: 1,
         };
 
-        assert_eq!(resources.game_memory_mb(false, 8192), 7168);
+        assert_eq!(resources.game_memory_mb(false, 8192, Some(6000)), 1024);
     }
 }

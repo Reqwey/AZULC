@@ -105,6 +105,8 @@ async fn run_inner(
             let prepared = prepare_modpack(&spec, &paths, concurrency, tx.clone()).await?;
             request.minecraft_version = prepared.plan.metadata.minecraft_version.clone();
             request.loader = prepared.plan.metadata.loader.clone();
+            request.settings.modpack_memory_reference_mb =
+                prepared.plan.metadata.memory_reference_mb;
             let _ = tx.send(PipelineEvent::ResolvedMetadata {
                 minecraft_version: request.minecraft_version.clone(),
                 loader: request.loader.clone(),
@@ -119,6 +121,11 @@ async fn run_inner(
                 "Modpack manifest selected Minecraft {} with {loader}",
                 request.minecraft_version
             )));
+            if let Some(memory_mb) = request.settings.modpack_memory_reference_mb {
+                let _ = tx.send(PipelineEvent::Log(format!(
+                    "Modpack provides a {memory_mb} MiB client memory reference"
+                )));
+            }
             Some(prepared)
         }
         None => None,

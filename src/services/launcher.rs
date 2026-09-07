@@ -213,6 +213,7 @@ fn launch_and_monitor_blocking(
     let maximum_memory = resources.game_memory_mb(
         instance.settings.auto_memory,
         instance.settings.max_memory_mb,
+        instance.settings.modpack_memory_reference_mb,
     );
 
     let mut args = vec![

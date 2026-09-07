@@ -15,6 +15,7 @@ pub(super) fn view<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a,
     let memory_value = app.system_resources.game_memory_mb(
         instance.settings.auto_memory,
         instance.settings.max_memory_mb,
+        instance.settings.modpack_memory_reference_mb,
     );
     let identity = section(
         "IDENTITY",
