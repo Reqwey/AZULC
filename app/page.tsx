@@ -66,10 +66,6 @@ function Screen({
           loading={eager ? 'eager' : 'lazy'}
         />
       </a>
-      <figcaption>
-        <span>{caption} · APP SCREENSHOT</span>
-        <span>View full image ↗</span>
-      </figcaption>
     </figure>
   );
 }
@@ -233,7 +229,6 @@ export default function Home() {
               alt="AZULC three-layer architecture: UI, application state, and services"
               loading="lazy"
             />
-            <figcaption>README / Three-layer architecture</figcaption>
           </figure>
         </section>
         <section id="download" className="download wrap">

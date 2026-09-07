@@ -220,19 +220,6 @@ h1 em {
 .screen a:hover img {
   filter: brightness(1.12);
 }
-.screen figcaption {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 11px 15px;
-  font-size: 12px;
-  color: var(--muted);
-  border-top: 1px solid var(--border);
-}
-.screen figcaption span:last-child {
-  white-space: nowrap;
-  color: var(--purple);
-}
 .compatibility {
   display: flex;
   align-items: center;
@@ -361,12 +348,6 @@ h2 {
   max-height: 420px;
   width: 100%;
   object-fit: contain;
-}
-.architecture figcaption {
-  text-align: center;
-  font: 12px Space;
-  color: var(--muted);
-  margin-top: 10px;
 }
 .download {
   padding-top: 30px;
@@ -539,11 +520,6 @@ h2 {
   }
   .actions {
     gap: 25px;
-  }
-  .screen figcaption {
-    flex-wrap: wrap;
-    padding: 8px;
-    gap: 8px;
   }
   .hero-screen {
     box-shadow: 4px 4px 0 var(--shadow);
