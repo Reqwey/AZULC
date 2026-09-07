@@ -57,6 +57,37 @@ instances/<uuid>/         isolated game directories, content, and launch logs
 state.json                accounts/tokens, instances, download policy, and settings
 ```
 
+## Automated releases
+
+The [release workflow](.github/workflows/release.yml) checks the latest commit title
+on pushes to the repository's default branch. A title exactly matching
+`bump version to 1.2.3` builds and publishes GitHub Release `v1.2.3`, with an
+automatically created tag pointing to that commit and generated release notes.
+Other commit titles and branches skip the release. When pushing multiple commits,
+the version bump must be the last commit.
+
+Before the first release, add these repository Actions secrets under
+**Settings → Secrets and variables → Actions**:
+
+- `AZULC_CURSEFORGE_API_KEY`
+- `AZULC_MICROSOFT_CLIENT_ID`
+
+These values are embedded into the distributed executable, just like local builds.
+Update `Cargo.toml` to the release version and regenerate `Cargo.lock` with
+`cargo check`, then commit both files with the version bump title and push.
+The workflow rejects a version that differs from `Cargo.toml`; no manual tag is needed.
+
+All builds must succeed before publication. Release assets include:
+
+- Windows x64: a ZIP containing `azulc.exe`.
+- macOS Intel and Apple Silicon: separate ZIPs containing `AZULC.app`.
+- Linux x64: a tar.gz containing `azulc`, built on Ubuntu 24.04.
+- `SHA256SUMS.txt`: checksums for the archives.
+
+The application packages are unsigned. Linux requires a desktop environment with
+the X11/Wayland and xkbcommon runtime libraries. Use a new version for each release;
+an existing release is never overwritten.
+
 ## Architecture
 
 AZULC is split into three layers. The UI describes what is shown, the app layer owns

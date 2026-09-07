@@ -1,8 +1,9 @@
-use crate::domain::cpu_thread_count;
+use crate::domain::{DEFAULT_GAME_MEMORY_MB, cpu_thread_count};
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 
 const MIB: u64 = 1024 * 1024;
 pub const MIN_GAME_MEMORY_MB: u32 = 512;
+const SYSTEM_MEMORY_RESERVE_MB: u32 = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SystemResources {
@@ -23,7 +24,18 @@ impl Default for SystemResources {
 
 impl SystemResources {
     pub fn memory_limit_mb(self) -> u32 {
-        self.available_memory_mb.max(MIN_GAME_MEMORY_MB)
+        self.total_memory_mb
+            .saturating_sub(SYSTEM_MEMORY_RESERVE_MB)
+            .max(MIN_GAME_MEMORY_MB)
+    }
+
+    pub fn game_memory_mb(self, automatic: bool, configured_mb: u32) -> u32 {
+        let requested = if automatic {
+            DEFAULT_GAME_MEMORY_MB
+        } else {
+            configured_mb
+        };
+        requested.clamp(MIN_GAME_MEMORY_MB, self.memory_limit_mb())
     }
 }
 
@@ -61,5 +73,38 @@ mod tests {
             cpu_threads: 1,
         };
         assert_eq!(resources.memory_limit_mb(), MIN_GAME_MEMORY_MB);
+    }
+
+    #[test]
+    fn automatic_memory_is_not_reduced_by_temporarily_low_available_memory() {
+        let resources = SystemResources {
+            available_memory_mb: 1800,
+            total_memory_mb: 16 * 1024,
+            cpu_threads: 1,
+        };
+
+        assert_eq!(resources.game_memory_mb(true, 8192), DEFAULT_GAME_MEMORY_MB);
+    }
+
+    #[test]
+    fn memory_limit_reserves_space_for_the_operating_system() {
+        let resources = SystemResources {
+            available_memory_mb: 4096,
+            total_memory_mb: 4096,
+            cpu_threads: 1,
+        };
+
+        assert_eq!(resources.memory_limit_mb(), 3072);
+    }
+
+    #[test]
+    fn manual_memory_is_capped_by_the_stable_system_limit() {
+        let resources = SystemResources {
+            available_memory_mb: 1024,
+            total_memory_mb: 8192,
+            cpu_threads: 1,
+        };
+
+        assert_eq!(resources.game_memory_mb(false, 8192), 7168);
     }
 }

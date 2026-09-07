@@ -187,6 +187,8 @@ pub struct InstanceSettings {
     pub custom_info: String,
 }
 
+pub const DEFAULT_GAME_MEMORY_MB: u32 = 4096;
+
 impl Default for InstanceSettings {
     fn default() -> Self {
         Self {
@@ -197,7 +199,7 @@ impl Default for InstanceSettings {
             height: 720,
             fullscreen: false,
             auto_memory: true,
-            max_memory_mb: 4096,
+            max_memory_mb: DEFAULT_GAME_MEMORY_MB,
             custom_window_title: String::new(),
             custom_info: String::new(),
         }

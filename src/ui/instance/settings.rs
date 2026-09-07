@@ -12,7 +12,10 @@ use super::components::{labeled_input, section, setting_slider};
 pub(super) fn view<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a, Message> {
     let instance_id = instance.id;
     let memory_limit = app.system_resources.memory_limit_mb();
-    let memory_value = instance.settings.max_memory_mb.clamp(512, memory_limit);
+    let memory_value = app.system_resources.game_memory_mb(
+        instance.settings.auto_memory,
+        instance.settings.max_memory_mb,
+    );
     let identity = section(
         "IDENTITY",
         column![
@@ -143,7 +146,10 @@ pub(super) fn view<'a>(app: &'a Launcher, instance: &'a Instance) -> Element<'a,
                 .style(theme::square_checkbox),
             setting_slider(
                 "MAXIMUM MEMORY",
-                format!("{memory_value} MiB // {memory_limit} MiB AVAILABLE"),
+                format!(
+                    "{memory_value} MiB // {} MiB CURRENTLY AVAILABLE",
+                    app.system_resources.available_memory_mb
+                ),
                 slider(512..=memory_limit, memory_value, move |value| {
                     Message::SetInstanceMemory(instance_id, value)
                 })

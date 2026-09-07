@@ -209,12 +209,11 @@ fn launch_and_monitor_blocking(
         ),
     );
 
-    let available_memory = crate::services::system_resources::read_blocking().memory_limit_mb();
-    let maximum_memory = if instance.settings.auto_memory {
-        (if required >= 17 { 4096 } else { 2048 }).min(available_memory)
-    } else {
-        instance.settings.max_memory_mb.clamp(512, available_memory)
-    };
+    let resources = crate::services::system_resources::read_blocking();
+    let maximum_memory = resources.game_memory_mb(
+        instance.settings.auto_memory,
+        instance.settings.max_memory_mb,
+    );
 
     let mut args = vec![
         "-Xms512M".into(),

@@ -98,9 +98,12 @@ pub fn sidebar(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SIDEBAR)),
         text_color: Some(TEXT),
-        border: outline(BORDER, 1.0, 0.0),
         ..Default::default()
     }
+}
+
+pub fn sidebar_frame(_: &Theme) -> container::Style {
+    container::Style::default().background(BORDER)
 }
 
 pub fn panel(_: &Theme) -> container::Style {

@@ -661,7 +661,8 @@ impl Launcher {
             Message::SetInstanceMemory(id, value) => {
                 let limit = self.system_resources.memory_limit_mb();
                 self.edit_instance(id, |instance| {
-                    instance.settings.max_memory_mb = value.clamp(512, limit)
+                    instance.settings.auto_memory = false;
+                    instance.settings.max_memory_mb = value.clamp(512, limit);
                 })
             }
             Message::SetInstanceWindowTitle(id, value) => {

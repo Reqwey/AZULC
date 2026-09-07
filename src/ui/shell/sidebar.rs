@@ -2,10 +2,10 @@ use crate::{
     app::{Launcher, Message, navigation::Route},
     domain::{InstallStage, Instance},
     theme,
-    ui::components::media,
+    ui::components::{CONTENT_END_GAP, media},
 };
 use iced::widget::{Space, button, column, container, row, rule, scrollable, text};
-use iced::{Alignment, Element, Fill, alignment};
+use iced::{Alignment, Element, Fill, Padding, alignment, padding};
 
 pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     let mut instance_cards = column![].spacing(6).width(Fill);
@@ -79,13 +79,13 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
                 .color(theme::MUTED),
         );
     }
-    let library = scrollable(instance_cards)
+    let library = scrollable(instance_cards.padding(padding::bottom(CONTENT_END_GAP)))
         .width(Fill)
         .height(Fill)
         .style(theme::square_scrollable)
         .spacing(9);
 
-    container(
+    let content = container(
         column![
             navigation_button(Route::Home, app.route),
             rule::horizontal(1),
@@ -98,10 +98,21 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
         .padding([20, 16])
         .spacing(12),
     )
-    .width(278)
+    .width(Fill)
     .height(Fill)
-    .style(theme::sidebar)
-    .into()
+    .style(theme::sidebar);
+
+    container(content)
+        .padding(Padding {
+            top: 0.0,
+            right: 1.0,
+            bottom: 1.0,
+            left: 1.0,
+        })
+        .width(278)
+        .height(Fill)
+        .style(theme::sidebar_frame)
+        .into()
 }
 
 fn instance_button<'a>(app: &Launcher, instance: &'a Instance) -> Element<'a, Message> {

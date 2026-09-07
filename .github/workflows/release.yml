@@ -1,0 +1,158 @@
+name: Release
+
+on:
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Detect release commit and validate package version
+        id: version
+        shell: python
+        run: |
+          import os
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          subject = subprocess.check_output(
+              ["git", "log", "-1", "--format=%s"], text=True
+          ).strip()
+          match = re.fullmatch(r"bump version to ((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))", subject)
+          if not match:
+              print("Not a release commit; skipping build and release.")
+              raise SystemExit(0)
+          version = match.group(1)
+          manifest = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))
+          if manifest["package"]["version"] != version:
+              raise SystemExit("Commit version must match Cargo.toml; update Cargo.toml and Cargo.lock together.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+
+  build:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x64
+          - os: macos-15-intel
+            platform: macos-x64
+          - os: macos-15
+            platform: macos-arm64
+          - os: ubuntu-24.04
+            platform: linux-x64
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PLATFORM: ${{ matrix.platform }}
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libudev-dev
+      - name: Write embedded configuration
+        shell: python
+        env:
+          AZULC_CURSEFORGE_API_KEY: ${{ secrets.AZULC_CURSEFORGE_API_KEY }}
+          AZULC_MICROSOFT_CLIENT_ID: ${{ secrets.AZULC_MICROSOFT_CLIENT_ID }}
+        run: |
+          import os
+          from pathlib import Path
+
+          lines = []
+          for key in ("AZULC_CURSEFORGE_API_KEY", "AZULC_MICROSOFT_CLIENT_ID"):
+              value = os.environ.get(key, "")
+              if not value.strip() or "\n" in value or "\r" in value:
+                  raise SystemExit(f"Set repository secret {key} to a non-empty, single-line value.")
+              lines.append(f"{key}='{value}'\n")
+          Path(".env").write_text("".join(lines), encoding="utf-8")
+      - name: Build release binary
+        run: cargo build --release --locked
+      - name: Bundle macOS application
+        if: runner.os == 'macOS'
+        run: |
+          cargo install cargo-bundle --version 0.9.0 --locked
+          cargo bundle --release --format osx
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Compress-Archive -Path target/release/azulc.exe -DestinationPath "dist/AZULC-$env:VERSION-$env:PLATFORM.zip"
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent target/release/bundle/osx/AZULC.app "dist/AZULC-$VERSION-$PLATFORM.zip"
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/AZULC-$VERSION-$PLATFORM.tar.gz" -C target/release azulc
+      - name: Remove embedded configuration file
+        if: always()
+        shell: python
+        run: |
+          from pathlib import Path
+          Path(".env").unlink(missing_ok=True)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum AZULC-* > SHA256SUMS.txt
+      - name: Create tag and publish all builds
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "AZULC v$VERSION" \
+            --generate-notes

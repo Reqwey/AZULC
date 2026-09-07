@@ -5,11 +5,11 @@ use crate::{
     theme,
 };
 use chrono::{DateTime, Local};
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
-use iced::{Alignment, Element, Fill, Length, padding};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::{Alignment, Element, Fill, padding};
 use std::time::{Duration, UNIX_EPOCH};
 
-use super::super::components::{CONTENT_END_GAP, SCROLLBAR_GAP, media};
+use super::super::components::{CONTENT_END_GAP, SCROLLBAR_GAP, compact_search, media};
 use super::components::format_bytes;
 
 pub(super) fn view<'a>(
@@ -39,7 +39,8 @@ pub(super) fn view<'a>(
         .iter()
         .filter(|entry| content_service::name_matches_query(&entry.name, query))
         .count();
-    let item_count = if kind == ContentKind::Mods && !query.is_empty() {
+    let searching = !query.is_empty();
+    let item_count = if searching {
         format!(
             "{visible_count} / {} LOCAL ITEMS",
             app.content_entries.len()
@@ -47,17 +48,11 @@ pub(super) fn view<'a>(
     } else {
         format!("{} LOCAL ITEMS", app.content_entries.len())
     };
-    let search: Element<'a, Message> = if kind == ContentKind::Mods {
-        text_input("SEARCH MODS", &app.content_query)
-            .on_input(Message::ContentQueryChanged)
-            .width(Length::Fixed(220.0))
-            .size(12)
-            .padding([9, 12])
-            .style(theme::square_text_input)
-            .into()
-    } else {
-        Space::new().width(0).into()
-    };
+    let search = compact_search(
+        search_placeholder(kind),
+        &app.content_query,
+        Message::ContentQueryChanged,
+    );
     let toolbar = row![
         column![
             text(active_tab.label().to_uppercase()).size(21),
@@ -122,31 +117,22 @@ pub(super) fn view<'a>(
                     ]
                     .spacing(2),
                     Space::new().width(Fill),
-                    text(if kind == ContentKind::Mods {
-                        "REVEAL  >"
-                    } else {
-                        "OPEN  >"
-                    })
-                    .font(theme::BODY_BOLD)
-                    .size(12)
-                    .color(theme::LAVENDER)
+                    text("REVEAL  >")
+                        .font(theme::BODY_BOLD)
+                        .size(12)
+                        .color(theme::LAVENDER)
                 ]
                 .spacing(12)
                 .align_y(Alignment::Center),
             )
             .width(Fill)
             .padding(13)
-            .on_press(if kind == ContentKind::Mods {
-                Message::RevealPath(entry.path.clone())
-            } else {
-                Message::OpenPath(entry.path.clone())
-            })
+            .on_press(Message::RevealPath(entry.path.clone()))
             .style(theme::ghost_button),
         );
     }
     if visible_count == 0 {
-        let searching_mods = kind == ContentKind::Mods && !query.is_empty();
-        let hint = if searching_mods {
+        let hint = if searching {
             "Try another file name or clear the search field."
         } else if kind.downloadable() {
             "Use DOWNLOAD to browse compatible CurseForge files, or add files to this folder."
@@ -156,8 +142,8 @@ pub(super) fn view<'a>(
         items = items.push(
             container(
                 column![
-                    text(if searching_mods {
-                        "NO MATCHING MODS".to_string()
+                    text(if searching {
+                        format!("NO MATCHING {}", active_tab.label().to_uppercase())
                     } else {
                         format!("NO {} YET", active_tab.label().to_uppercase())
                     })
@@ -189,6 +175,17 @@ pub(super) fn view<'a>(
     .spacing(10)
     .height(Fill)
     .into()
+}
+
+fn search_placeholder(kind: ContentKind) -> &'static str {
+    match kind {
+        ContentKind::Worlds => "SEARCH WORLDS",
+        ContentKind::Mods => "SEARCH MODS",
+        ContentKind::ResourcePacks => "SEARCH RESOURCE PACKS",
+        ContentKind::ShaderPacks => "SEARCH SHADER PACKS",
+        ContentKind::DataPacks => "SEARCH DATA PACKS",
+        ContentKind::Screenshots => "SEARCH SCREENSHOTS",
+    }
 }
 
 fn format_timestamp(timestamp: u64) -> String {
