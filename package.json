@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "start": "wrangler dev --config dist/server/wrangler.json",
+    "start": "vite preview --config vite.preview.config.ts --outDir dist/client",
     "lint": "oxlint",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "preview": "vite preview --config vite.preview.config.ts --outDir dist/client"
   },
   "dependencies": {
     "react": "19.2.6",
