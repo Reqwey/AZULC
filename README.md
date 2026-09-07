@@ -1,4 +1,4 @@
-# AZULC website
+# AZULC Official Website
 
 The `site` branch contains only the Azusa Minecraft Launcher website. The Rust launcher is on the [main branch](https://github.com/Reqwey/AZULC/tree/main).
 
