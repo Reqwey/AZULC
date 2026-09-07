@@ -5,7 +5,6 @@ mod domain;
 #[cfg(test)]
 mod dotenv_file;
 mod environment;
-mod platform;
 mod services;
 mod storage;
 mod theme;

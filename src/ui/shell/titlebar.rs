@@ -11,23 +11,21 @@ use icons::WindowControl;
 
 #[cfg(target_os = "macos")]
 pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
-    const TRAFFIC_LIGHT_CLEARANCE: f32 = 84.0;
-
     let title = container(text("Azusa Minecraft Launcher").align_y(Alignment::Center))
-        .padding([0, 12])
         .width(Fill)
         .height(44)
+        .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center);
+    let account = container(account_button(app))
+        .width(Fill)
+        .height(44)
+        .align_x(alignment::Horizontal::Right);
 
     mouse_area(
-        container(row![
-            Space::new().width(TRAFFIC_LIGHT_CLEARANCE),
-            title,
-            account_button(app)
-        ])
-        .height(44)
-        .width(Fill)
-        .style(theme::titlebar),
+        container(iced::widget::stack![title, account])
+            .height(44)
+            .width(Fill)
+            .style(theme::titlebar),
     )
     .on_press(Message::DragWindow)
     .on_double_click(Message::ToggleMaximize)
