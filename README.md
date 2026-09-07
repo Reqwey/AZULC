@@ -59,12 +59,13 @@ state.json                accounts/tokens, instances, download policy, and setti
 
 ## Automated releases
 
-The [release workflow](.github/workflows/release.yml) checks the latest commit title
-on pushes to the repository's default branch. A title exactly matching
-`bump version to 1.2.3` builds and publishes GitHub Release `v1.2.3`, with an
-automatically created tag pointing to that commit and generated release notes.
-Other commit titles and branches skip the release. When pushing multiple commits,
-the version bump must be the last commit.
+Run the [release workflow](.github/workflows/release.yml) manually from
+**Actions → Release → Run workflow**, selecting the branch to release.
+The workflow reads the `x.x.x` package version from that branch's `Cargo.toml`
+and publishes GitHub Release `vx.x.x`, with an automatically created tag pointing
+to the selected commit and generated release notes. Pushes do not trigger releases,
+and commit titles have no effect. The workflow must be present on the default
+branch for GitHub to show the manual trigger.
 
 Before the first release, add these repository Actions secrets under
 **Settings → Secrets and variables → Actions**:
@@ -74,14 +75,15 @@ Before the first release, add these repository Actions secrets under
 
 These values are embedded into the distributed executable, just like local builds.
 Update `Cargo.toml` to the release version and regenerate `Cargo.lock` with
-`cargo check`, then commit both files with the version bump title and push.
-The workflow rejects a version that differs from `Cargo.toml`; no manual tag is needed.
+`cargo check`, then commit both files and push before running the workflow.
+No version input or manual tag is needed.
 
 All builds must succeed before publication. Release assets include:
 
 - Windows x64: a ZIP containing `azulc.exe`.
-- macOS Intel and Apple Silicon: separate ZIPs containing `AZULC.app`.
-- Linux x64: a tar.gz containing `azulc`, built on Ubuntu 24.04.
+- macOS Intel and Apple Silicon: separate ZIPs containing `AZULC.app`, built on
+  `macos-26-intel` and `macos-latest`, respectively.
+- Linux x64: a tar.gz containing `azulc`, built on the `ubuntu-latest` runner.
 - `SHA256SUMS.txt`: checksums for the archives.
 
 The application packages are unsigned. Linux requires a desktop environment with
