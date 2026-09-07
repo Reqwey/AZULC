@@ -11,7 +11,10 @@
     "start": "vite preview --config vite.preview.config.ts --outDir dist/client",
     "lint": "oxlint",
     "format": "oxfmt",
-    "preview": "vite preview --config vite.preview.config.ts --outDir dist/client"
+    "preview": "vite preview --config vite.preview.config.ts --outDir dist/client",
+    "update:downloads": "node scripts/update-downloads.mjs",
+    "prebuild": "npm run update:downloads",
+    "test:downloads": "node --test scripts/update-downloads.test.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

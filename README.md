@@ -50,3 +50,15 @@ For a local check, `npm run preview` serves the exported files. Use the local UR
 Downloads link to GitHub Releases. Launcher build instructions link explicitly to the README on `main`.
 
 The existing optional Sites project ID is preserved in `.openai/hosting.json`, with its static directory set to the same `dist/client` output. Cloudflare Pages does not use that file. Build output and local credentials stay out of Git.
+
+## Automatic download links
+
+`npm run build` automatically runs `npm run update:downloads` first. The updater reads the latest published, non-prerelease GitHub release and writes its actual asset URLs to `app/data/downloads.json`. The page imports that file at build time and displays Windows x64, macOS Intel x64, macOS Apple Silicon ARM64, and Linux x64 separately.
+
+Run `npm run update:downloads` to refresh links without building. Run `npm run test:downloads` to check architecture matching and invalid release handling.
+
+The GitHub API is tried first. If it is unavailable or rate-limited, the script reads GitHub's public latest-release and asset pages. An optional `GITHUB_TOKEN` (or `GH_TOKEN`) increases the API rate limit; it is used only during the build and is never written into page data. No token is required for public releases.
+
+Missing platform packages appear as unavailable. Ambiguous packages or a failed release lookup stop the build instead of silently publishing stale or incorrect links. The previous generated file is preserved on lookup failure.
+
+Links update when the website builds, not on each visitor request. After publishing a launcher release, trigger a new Cloudflare website build to refresh the deployed download links.

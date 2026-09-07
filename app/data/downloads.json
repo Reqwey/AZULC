@@ -1,0 +1,30 @@
+{
+  "version": "v0.1.0",
+  "releaseUrl": "https://github.com/Reqwey/AZULC/releases/tag/v0.1.0",
+  "downloads": [
+    {
+      "id": "windows-x64",
+      "label": "Windows",
+      "detail": "x64 · ZIP",
+      "url": "https://github.com/Reqwey/AZULC/releases/download/v0.1.0/AZULC-0.1.0-windows-x64.zip"
+    },
+    {
+      "id": "macos-x64",
+      "label": "macOS Intel",
+      "detail": "x64 · ZIP",
+      "url": "https://github.com/Reqwey/AZULC/releases/download/v0.1.0/AZULC-0.1.0-macos-x64.zip"
+    },
+    {
+      "id": "macos-arm64",
+      "label": "macOS Apple Silicon",
+      "detail": "ARM64 · ZIP",
+      "url": "https://github.com/Reqwey/AZULC/releases/download/v0.1.0/AZULC-0.1.0-macos-arm64.zip"
+    },
+    {
+      "id": "linux-x64",
+      "label": "Linux",
+      "detail": "x64 · tar.gz",
+      "url": "https://github.com/Reqwey/AZULC/releases/download/v0.1.0/AZULC-0.1.0-linux-x64.tar.gz"
+    }
+  ]
+}

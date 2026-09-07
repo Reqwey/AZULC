@@ -1,3 +1,5 @@
+import release from './data/downloads.json';
+
 const repo = 'https://github.com/Reqwey/AZULC';
 const features = [
   [
@@ -241,26 +243,40 @@ export default function Home() {
           <div className="download-content">
             <span className="eyebrow">YOUR NEXT SESSION STARTS HERE</span>
             <h2>Ready for your next session.</h2>
-            <p>Choose a package for your device on GitHub Releases.</p>
+            <p>
+              Download {release.version} for your device.{' '}
+              <a className="text-link" href={release.releaseUrl}>
+                Release notes ↗
+              </a>
+            </p>
             <div className="platforms">
-              {[
-                ['Windows', 'x64 · ZIP'],
-                ['macOS', 'Intel / Apple Silicon · ZIP'],
-                ['Linux', 'x64 · tar.gz'],
-              ].map(([name, sub]) => (
-                <a href={`${repo}/releases`} key={name}>
-                  <span className="pixel">{name}</span>
-                  <span>{sub}</span>
-                  <b aria-hidden="true">↗</b>
-                </a>
-              ))}
+              {release.downloads.map(({ id, label, detail, url }) =>
+                url ? (
+                  <a
+                    className="download-card"
+                    href={url}
+                    key={id}
+                    aria-label={`Download AZULC ${release.version} for ${label}, ${detail}`}
+                  >
+                    <span className="pixel">{label}</span>
+                    <span>{detail}</span>
+                    <b aria-hidden="true">↓</b>
+                  </a>
+                ) : (
+                  <div className="download-card unavailable" key={id}>
+                    <span className="pixel">{label}</span>
+                    <span>{detail}</span>
+                    <span>Not available in this release</span>
+                  </div>
+                ),
+              )}
             </div>
             <p className="download-note">
               Packages are unsigned. Linux requires a desktop environment and
               X11 / Wayland and xkbcommon runtime libraries.
               <br />
-              See the release page for instructions and checksums. If no package
-              is available, follow the README to build from source.
+              Choose Intel for Intel-based Macs or Apple Silicon for M-series
+              Macs. See the release notes for instructions and checksums.
             </p>
             <a className="text-link" href={`${repo}/tree/main#run`}>
               Read the build instructions ↗

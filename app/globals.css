@@ -820,3 +820,39 @@ h2 {
     transform: translate(2px, -2px);
   }
 }
+
+/* Separate download targets for both Mac architectures. */
+.platforms {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.platforms .download-card {
+  min-width: 0;
+}
+.platforms .pixel {
+  line-height: 1.2;
+  padding-right: 16px;
+}
+.platforms .unavailable {
+  position: relative;
+  border: 1px solid var(--border);
+  padding: 18px;
+  background: var(--raised);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  opacity: 0.65;
+}
+.platforms .unavailable > span:not(.pixel) {
+  font: 12px Space;
+  color: var(--muted);
+}
+@media (max-width: 1000px) {
+  .platforms {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .platforms {
+    grid-template-columns: 1fr;
+  }
+}
