@@ -1,3 +1,5 @@
+import Downloads from './downloads';
+import DownloadScroll from './download-scroll';
 import release from './data/downloads.json';
 
 const repo = 'https://github.com/Reqwey/AZULC';
@@ -228,15 +230,19 @@ export default function Home() {
           <figure className="architecture">
             <img
               src="/assets/three-layer-shuttle.svg"
+              width="900"
+              height="1240"
               alt="AZULC three-layer architecture: UI, application state, and services"
               loading="lazy"
             />
           </figure>
         </section>
-        <section id="download" className="download wrap">
+        <section className="download wrap">
           <img
             className="brand-banner"
             src="/assets/readme-header.png"
+            width="1600"
+            height="520"
             alt="Azusa Minecraft Launcher"
             loading="lazy"
           />
@@ -249,35 +255,7 @@ export default function Home() {
                 Release notes ↗
               </a>
             </p>
-            <div className="platforms">
-              {release.downloads.map(({ id, label, detail, url }) =>
-                url ? (
-                  <a
-                    className="download-card"
-                    href={url}
-                    key={id}
-                    aria-label={`Download AZULC ${release.version} for ${label}, ${detail}`}
-                  >
-                    <span className="pixel">{label}</span>
-                    <span>{detail}</span>
-                    <b aria-hidden="true">↓</b>
-                  </a>
-                ) : (
-                  <div className="download-card unavailable" key={id}>
-                    <span className="pixel">{label}</span>
-                    <span>{detail}</span>
-                    <span>Not available in this release</span>
-                  </div>
-                ),
-              )}
-            </div>
-            <p className="download-note">
-              Packages are unsigned. Linux requires a desktop environment and
-              X11 / Wayland and xkbcommon runtime libraries.
-              <br />
-              Choose Intel for Intel-based Macs or Apple Silicon for M-series
-              Macs. See the release notes for instructions and checksums.
-            </p>
+            <Downloads />
             <a className="text-link" href={`${repo}/tree/main#run`}>
               Read the build instructions ↗
             </a>
@@ -298,6 +276,8 @@ export default function Home() {
         </p>
         <a href={`${repo}/tree/main#license`}>GPL-3.0-or-later ↗</a>
       </footer>
+      <div id="download" aria-hidden="true" />
+      <DownloadScroll />
     </>
   );
 }

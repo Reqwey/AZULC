@@ -856,3 +856,34 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+.detected-downloads {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+}
+.mac-instructions {
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+}
+.mac-instructions h3 {
+  font-size: 26px;
+  margin-bottom: 12px;
+}
+.mac-instructions p {
+  margin: 12px 0;
+  font-size: 14px;
+}
+.mac-instructions pre {
+  background: var(--background);
+  padding: 16px;
+  overflow-x: auto;
+  color: var(--purple);
+  font-size: 14px;
+}
+.download-content > .text-link {
+  display: inline-block;
+  margin: 12px 24px 0 0;
+}
+#download {
+  height: 1px;
+  scroll-margin: 0;
+}
