@@ -62,5 +62,3 @@ The GitHub API is tried first. If it is unavailable or rate-limited, the script 
 Missing platform packages appear as unavailable. Ambiguous packages or a failed release lookup stop the build instead of silently publishing stale or incorrect links. The previous generated file is preserved on lookup failure.
 
 Links update when the website builds, not on each visitor request. After publishing a launcher release, trigger a new Cloudflare website build to refresh the deployed download links.
-est
-t

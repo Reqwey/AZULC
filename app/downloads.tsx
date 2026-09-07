@@ -53,10 +53,6 @@ export default function Downloads() {
         <div className="mac-instructions">
           <h3>Open AZULC on macOS</h3>
           <p>
-            Choose Intel for Intel-based Macs or Apple Silicon for M-series
-            Macs. Your browser does not reliably identify your Mac’s chip.
-          </p>
-          <p>
             Move AZULC.app to Applications. If macOS blocks the downloaded app,
             run this command in Terminal to remove its quarantine flag:
           </p>
