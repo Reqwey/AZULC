@@ -6,7 +6,7 @@ use crate::{
     domain::Instance,
     theme,
 };
-use iced::widget::{Space, button, column, row, rule, scrollable, text};
+use iced::widget::{Space, button, column, container, row, rule, scrollable, text};
 use iced::{Alignment, Element, Fill, Length};
 
 use super::super::components::media;
@@ -100,11 +100,11 @@ pub(super) fn view<'a>(
         });
     let mut layout = column![header, tabs];
     if let Some(warning) = warning {
-        layout = layout.push(
+        let mut content = column![
             row![
-                text(format!("JAVA WARNING — {warning}"))
-                    .font(theme::BODY_FONT)
-                    .size(13)
+                text("JAVA WARNING")
+                    .font(theme::DISPLAY_FONT)
+                    .size(12)
                     .color(theme::WARNING)
                     .width(Fill),
                 button(text("RESCAN JAVA").size(12))
@@ -112,8 +112,64 @@ pub(super) fn view<'a>(
                     .style(theme::ghost_button),
             ]
             .spacing(12)
-            .align_y(Alignment::Center),
+            .align_y(Alignment::Center)
+        ]
+        .spacing(12);
+        if let Some((_, Ok(required))) = app.instance_java_requirement.as_ref() {
+            let closest = app
+                .java_runtimes
+                .iter()
+                .min_by_key(|runtime| (runtime.major.abs_diff(*required), runtime.major));
+            content = content.push(
+                row![
+                    java_version("REQUIRED", format!("JAVA {required}"), theme::WARNING),
+                    java_version(
+                        "CLOSEST DETECTED",
+                        closest.map_or_else(
+                            || "NONE".to_owned(),
+                            |runtime| format!("JAVA {}", runtime.major),
+                        ),
+                        theme::LAVENDER_SOFT
+                    ),
+                ]
+                .spacing(20),
+            );
+        }
+        let hint = match app.instance_java_requirement.as_ref() {
+            Some((_, Ok(_))) if !instance.settings.auto_java => {
+                let selected = app
+                    .java_runtimes
+                    .iter()
+                    .find(|runtime| Some(&runtime.path) == instance.settings.java_path.as_ref());
+                selected.map_or_else(
+                    || "Selected Java not found. Choose Java in Settings.".to_owned(),
+                    |runtime| format!("Java {} selected. Change it in Settings.", runtime.major),
+                )
+            }
+            Some((_, Ok(_))) => "Install the required Java, then rescan.".to_owned(),
+            _ => warning,
+        };
+        content = content.push(
+            text(hint)
+                .font(theme::BODY_FONT)
+                .size(12)
+                .color(theme::MUTED),
         );
+        layout =
+            layout.push(
+                container(content)
+                    .width(Fill)
+                    .padding(16)
+                    .style(|_| container::Style {
+                        background: Some(theme::WARNING.scale_alpha(0.05).into()),
+                        border: iced::Border {
+                            color: theme::WARNING.scale_alpha(0.6),
+                            width: 1.0,
+                            radius: 0.0.into(),
+                        },
+                        ..container::Style::default()
+                    }),
+            );
     }
     layout
         .push(rule::horizontal(1))
@@ -122,4 +178,21 @@ pub(super) fn view<'a>(
         .width(Fill)
         .height(Fill)
         .into()
+}
+
+fn java_version(
+    label: &'static str,
+    value: String,
+    color: iced::Color,
+) -> Element<'static, Message> {
+    column![
+        text(label)
+            .font(theme::BODY_BOLD)
+            .size(11)
+            .color(theme::MUTED),
+        text(value).font(theme::DISPLAY_FONT).size(24).color(color),
+    ]
+    .spacing(5)
+    .width(Fill)
+    .into()
 }
