@@ -12,23 +12,29 @@ pub(super) fn configure(command: &mut Command) {
     command.process_group(0);
 }
 
-pub(super) struct Guard(Option<Pid>);
+pub(super) struct Guard {
+    pid: Option<Pid>,
+    on_drop: super::OnDrop,
+}
 
 impl Guard {
-    pub(super) fn attach(child: &Child) -> io::Result<Self> {
+    pub(super) fn attach(child: &Child, on_drop: super::OnDrop) -> io::Result<Self> {
         let pid = child
             .id()
             .and_then(|id| i32::try_from(id).ok())
             .and_then(Pid::from_raw)
             .filter(|pid| *pid != Pid::INIT)
             .ok_or_else(|| io::Error::other("background process ID is unavailable"))?;
-        Ok(Self(Some(pid)))
+        Ok(Self {
+            pid: Some(pid),
+            on_drop,
+        })
     }
 
-    fn terminate(&mut self) -> io::Result<()> {
-        if let Some(pid) = self.0 {
+    pub(super) fn terminate(&mut self) -> io::Result<()> {
+        if let Some(pid) = self.pid {
             match kill_process_group(pid, Signal::KILL) {
-                Ok(()) | Err(Errno::SRCH) => self.0 = None,
+                Ok(()) | Err(Errno::SRCH) => self.pid = None,
                 Err(error) => return Err(error.into()),
             }
         }
@@ -38,13 +44,17 @@ impl Guard {
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        let _ = self.terminate();
+        if self.on_drop == super::OnDrop::Terminate {
+            let _ = self.terminate();
+        }
     }
 }
 
 pub(super) async fn wait(child: &mut Child, group: &mut Guard) -> io::Result<ExitStatus> {
-    let pid = group
-        .0
+    let pid = child
+        .id()
+        .and_then(|id| i32::try_from(id).ok())
+        .and_then(Pid::from_raw)
         .ok_or_else(|| io::Error::other("background process group is unavailable"))?;
     loop {
         // WNOWAIT observes exit without reaping. Keeping the leader waitable

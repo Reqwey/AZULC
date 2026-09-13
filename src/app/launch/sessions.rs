@@ -43,12 +43,38 @@ pub(crate) struct LaunchSession {
     pub(crate) ready: bool,
     pub(crate) active: bool,
     pub(crate) failed: bool,
+    pub(crate) stopping: bool,
+    pub(super) stop: Option<tokio::sync::mpsc::Sender<()>>,
     ready_at: Option<Instant>,
     attempt_id: Uuid,
     target: LaunchTarget,
 }
 
 impl LaunchSession {
+    pub(crate) fn stop_attempt(&self) -> Option<LaunchAttempt> {
+        (self.active && !self.stopping && self.stop.is_some()).then_some(LaunchAttempt {
+            instance_id: self.instance_id,
+            id: self.attempt_id,
+        })
+    }
+
+    pub(super) fn request_stop(&mut self) -> bool {
+        if self.stop_attempt().is_none() {
+            return false;
+        }
+        if self
+            .stop
+            .as_ref()
+            .is_some_and(|stop| stop.try_send(()).is_ok())
+        {
+            self.stopping = true;
+            self.status = "Terminating Minecraft…".into();
+            true
+        } else {
+            false
+        }
+    }
+
     pub(super) fn mark_ready(&mut self) {
         self.ready = true;
         self.ready_at = Some(Instant::now());
@@ -106,6 +132,8 @@ impl LaunchRegistry {
                 ready: false,
                 active: true,
                 failed: false,
+                stopping: false,
+                stop: None,
                 ready_at: None,
                 attempt_id: attempt.id,
                 target,
@@ -191,6 +219,41 @@ impl LaunchRegistry {
 mod tests {
     use super::*;
     use crate::domain::{InstanceColor, InstanceOrigin, InstanceSettings, LoaderKind, LoaderSpec};
+
+    #[test]
+    fn stop_is_scoped_to_the_current_attempt_and_waits_for_exit() {
+        let mut launches = LaunchRegistry::default();
+        let instance = instance(Uuid::new_v4(), true);
+        let old = launches.begin(&instance, "Preparing").unwrap();
+        assert!(launches.session_mut(&old).unwrap().stop_attempt().is_none());
+        launches.session_mut(&old).unwrap().active = false;
+        let current = launches.begin(&instance, "Preparing").unwrap();
+        let (stop, mut rx) = tokio::sync::mpsc::channel(1);
+        launches.session_mut(&current).unwrap().stop = Some(stop);
+        assert!(launches.session_mut(&old).is_none());
+        let session = launches.session_mut(&current).unwrap();
+        assert_eq!(session.stop_attempt(), Some(current.clone()));
+        assert!(session.request_stop());
+        assert!(session.active && session.stopping);
+        assert!(session.stop_attempt().is_none());
+        assert!(!session.request_stop());
+        assert_eq!(rx.try_recv(), Ok(()));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn closed_stop_channel_does_not_leave_session_stopping() {
+        let mut launches = LaunchRegistry::default();
+        let attempt = launches
+            .begin(&instance(Uuid::new_v4(), true), "Preparing")
+            .unwrap();
+        let (stop, rx) = tokio::sync::mpsc::channel(1);
+        drop(rx);
+        let session = launches.session_mut(&attempt).unwrap();
+        session.stop = Some(stop);
+        assert!(!session.request_stop());
+        assert!(!session.stopping);
+    }
 
     #[test]
     fn begin_allows_two_isolated_instances_to_be_active_together() {

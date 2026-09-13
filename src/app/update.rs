@@ -862,6 +862,9 @@ impl Launcher {
                 return self.handle_pipeline(&attempt, *event);
             }
             Message::LaunchInstance(id) => return self.launch_instance(id),
+            Message::StopInstance(attempt) => {
+                self.stop_instance(&attempt);
+            }
             Message::LaunchEvent(attempt, event) => {
                 return self.handle_launch_event(&attempt, event);
             }

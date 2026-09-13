@@ -85,6 +85,7 @@ fn child_fixture() {
             }
             std::fs::write(directory.join("parent-ready"), "ready").unwrap();
             let _ = leaf.wait();
+            std::fs::write(directory.join("parent-exited"), "done").unwrap();
         }
         _ => panic!("unknown child mode"),
     }
@@ -186,4 +187,49 @@ async fn spawn_failure_is_reported() {
     .await
     .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
+}
+
+#[tokio::test]
+async fn explicit_stop_waits_for_exit_and_terminates_descendants() {
+    let fixture = Fixture::new();
+    let mut command = child_command("tree", &fixture.0);
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        run_controlled(&mut command, OnDrop::Detach, |_| {}, |_, _| {}, async {
+            stopped.await.unwrap()
+        })
+        .await
+    });
+    ready(&fixture.0.join("parent-ready")).await;
+    stop.send(()).unwrap();
+    let (_, terminated) = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(terminated);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(!fixture.0.join("leaf-survived").exists());
+}
+
+#[tokio::test]
+async fn detached_game_survives_monitor_drop() {
+    let fixture = Fixture::new();
+    let mut command = child_command("tree", &fixture.0);
+    let task = tokio::spawn(async move {
+        run_controlled(
+            &mut command,
+            OnDrop::Detach,
+            |_| {},
+            |_, _| {},
+            std::future::pending(),
+        )
+        .await
+    });
+    ready(&fixture.0.join("parent-ready")).await;
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    ready(&fixture.0.join("leaf-survived")).await;
+    ready(&fixture.0.join("parent-exited")).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 }

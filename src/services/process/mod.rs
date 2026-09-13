@@ -1,7 +1,8 @@
 //! Lifecycle of noninteractive background processes and their descendants.
 //!
 //! Windows uses a job; Linux/macOS use a new process group. Descendants are
-//! terminated on cancellation, errors, and when the parent exits. Unix children
+//! terminated on errors and when the parent exits. Cancellation can either
+//! terminate or detach, allowing games to survive launcher closure. Unix children
 //! that explicitly leave the group (setsid/setpgid) are outside this contract.
 
 use std::{
@@ -26,6 +27,12 @@ pub(crate) enum OutputStream {
     Stderr,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OnDrop {
+    Terminate,
+    Detach,
+}
+
 /// Runs without a console or stdin, forwarding both streams until fully drained.
 /// Dropping the future terminates the managed group before dropping/reaping the
 /// direct child. Callers never need to parse output to determine completion.
@@ -33,23 +40,73 @@ pub(crate) async fn run(
     command: &mut Command,
     on_line: impl Fn(OutputStream, String) + Sync,
 ) -> io::Result<ExitStatus> {
+    run_controlled(
+        command,
+        OnDrop::Terminate,
+        |_| {},
+        on_line,
+        std::future::pending(),
+    )
+    .await
+    .map(|(status, _)| status)
+}
+
+/// An explicit stop kills the group, then waits for exit and drains its output.
+/// The boolean reports whether a stop was handled before normal completion.
+/// `Detach` preserves a running game when the monitor or launcher is closed.
+pub(crate) async fn run_controlled(
+    command: &mut Command,
+    on_drop: OnDrop,
+    on_started: impl FnOnce(u32),
+    on_line: impl Fn(OutputStream, String) + Sync,
+    stop: impl Future<Output = ()>,
+) -> io::Result<(ExitStatus, bool)> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(on_drop == OnDrop::Terminate);
     platform::configure(command);
     let mut child = command.spawn()?;
     // Declaration order matters: the guard drops before child, keeping Unix
     // process group IDs protected from reuse until group cleanup is finished.
-    let mut group = platform::Guard::attach(&child)?;
+    // A failure while attaching must still kill the newly spawned child.
+    let mut group = match platform::Guard::attach(&child, on_drop) {
+        Ok(group) => group,
+        Err(error) => {
+            let _ = child.kill().await;
+            return Err(error);
+        }
+    };
+    on_started(
+        child
+            .id()
+            .ok_or_else(|| io::Error::other("missing child PID"))?,
+    );
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    let (status, (), ()) = tokio::try_join!(
-        platform::wait(&mut child, &mut group),
+    let result = tokio::try_join!(
+        async {
+            tokio::select! {
+                biased;
+                result = platform::wait(&mut child, &mut group) => result.map(|status| (status, false)),
+                () = stop => {
+                    group.terminate()?;
+                    platform::wait(&mut child, &mut group).await.map(|status| (status, true))
+                }
+            }
+        },
         read_lines(stdout, OutputStream::Stdout, &on_line),
         read_lines(stderr, OutputStream::Stderr, &on_line),
-    )?;
+    );
+    let (status, (), ()) = match result {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = group.terminate();
+            let _ = child.kill().await;
+            return Err(error);
+        }
+    };
     Ok(status)
 }
 

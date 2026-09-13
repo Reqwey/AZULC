@@ -159,6 +159,7 @@ pub enum Message {
     RetryInstall(InstallAttempt),
     Pipeline(InstallAttempt, Box<PipelineEvent>),
     LaunchInstance(Uuid),
+    StopInstance(LaunchAttempt),
     LaunchEvent(LaunchAttempt, launcher::LaunchEvent),
     DismissNotice,
 }

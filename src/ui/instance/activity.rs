@@ -233,7 +233,21 @@ pub(super) fn launch_session(session: &LaunchSession) -> Element<'_, Message> {
             .height(Fill)
             .padding(12)
             .style(theme::inset),
-            open
+            row![
+                open,
+                Space::new().width(Fill),
+                button(
+                    text(if session.stopping {
+                        "TERMINATING…"
+                    } else {
+                        "TERMINATE INSTANCE"
+                    })
+                    .size(12)
+                )
+                .on_press_maybe(session.stop_attempt().map(Message::StopInstance))
+                .style(theme::danger_button),
+            ]
+            .spacing(10)
         ]
         .spacing(11)
         .width(Fill)

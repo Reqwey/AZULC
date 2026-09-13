@@ -4,18 +4,18 @@ use crate::{
     services::{
         java,
         minecraft::{self, Arguments, Library, Rule, VersionJson},
-        path_safety,
+        path_safety, process,
     },
     storage::Paths,
 };
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader, Read, Write},
+    io::Write,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::{
-        Arc, Mutex,
+        Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -28,6 +28,7 @@ pub struct LaunchResult {
     pub pid: u32,
     pub java: JavaRuntime,
     pub log_path: PathBuf,
+    pub stop: Sender<()>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,7 @@ pub enum LaunchEvent {
     Ready,
     Exited {
         code: Option<i32>,
+        terminated: bool,
         ready: bool,
         log_path: PathBuf,
     },
@@ -70,21 +72,22 @@ pub enum LaunchError {
     InvalidClasspath(#[source] std::env::JoinPathsError),
     #[error("Java {0} was not found; install it and scan again")]
     MissingJava(u32),
-    #[error("could not start Java: {0}")]
-    Spawn(String),
 }
 
 pub async fn monitor(instance: Instance, account: Account, paths: Paths, tx: Sender<LaunchEvent>) {
     let fallback_log = instance.game_dir.join(".azulc/latest-launch.log");
     let error_tx = tx.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        launch_and_monitor_blocking(instance, account, paths, tx)
-    })
-    .await;
+    let result =
+        match tokio::task::spawn_blocking(move || prepare_launch(instance, account, paths)).await {
+            Ok(Ok(prepared)) => run_game(prepared, tx)
+                .await
+                .map_err(|error| error.to_string()),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(error) => Err(format!("launch preparation task failed: {error}")),
+        };
     let error = match result {
-        Ok(Ok(())) => return,
-        Ok(Err(error)) => error.to_string(),
-        Err(error) => format!("launch monitor task failed: {error}"),
+        Ok(()) => return,
+        Err(error) => error,
     };
     let _ = error_tx
         .send(LaunchEvent::Failed {
@@ -94,12 +97,18 @@ pub async fn monitor(instance: Instance, account: Account, paths: Paths, tx: Sen
         .await;
 }
 
-fn launch_and_monitor_blocking(
+struct PreparedLaunch {
+    command: Command,
+    runtime: JavaRuntime,
+    log_path: PathBuf,
+    log: File,
+}
+
+fn prepare_launch(
     instance: Instance,
     account: Account,
     paths: Paths,
-    tx: Sender<LaunchEvent>,
-) -> Result<(), LaunchError> {
+) -> Result<PreparedLaunch, LaunchError> {
     let chain = load_chain(&paths.minecraft, &instance.version_id)?;
     let merged = merge_chain(&chain);
     let requirement = merged.java_version.as_ref().map(|v| v.major_version);
@@ -293,57 +302,19 @@ fn launch_and_monitor_blocking(
         std::env::split_paths(&classpath).count()
     )?;
     launch_log.flush()?;
-    let launch_log = Arc::new(Mutex::new(launch_log));
     let mut command = Command::new(&runtime.path);
     command
         .args(&args)
         .current_dir(&game_directory)
         .env("CLASSPATH", &classpath)
         .env("AZULC_WINDOW_TITLE", &instance.settings.custom_window_title)
-        .env("AZULC_CUSTOM_INFO", &instance.settings.custom_info)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(java::CREATE_NO_WINDOW);
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|e| LaunchError::Spawn(e.to_string()))?;
-    let result = LaunchResult {
-        pid: child.id(),
-        java: runtime,
-        log_path: log_path.clone(),
-    };
-    let _ = tx.blocking_send(LaunchEvent::Started(result));
-
-    let ready = Arc::new(AtomicBool::new(false));
-    let stdout = child
-        .stdout
-        .take()
-        .map(|output| pipe_game_output(output, launch_log.clone(), tx.clone(), ready.clone()));
-    let stderr = child
-        .stderr
-        .take()
-        .map(|output| pipe_game_output(output, launch_log.clone(), tx.clone(), ready.clone()));
-    let status = child.wait()?;
-    if let Some(thread) = stdout {
-        let _ = thread.join();
-    }
-    if let Some(thread) = stderr {
-        let _ = thread.join();
-    }
-    let was_ready = ready.load(Ordering::SeqCst);
-    if let Ok(mut log) = launch_log.lock() {
-        let _ = log.flush();
-    }
-    let _ = tx.blocking_send(LaunchEvent::Exited {
-        code: status.code(),
-        ready: was_ready,
+        .env("AZULC_CUSTOM_INFO", &instance.settings.custom_info);
+    Ok(PreparedLaunch {
+        command,
+        runtime,
         log_path,
-    });
-    Ok(())
+        log: launch_log,
+    })
 }
 
 fn forge_compatibility_jvm_args(loader: LoaderKind, client: &Path) -> Vec<String> {
@@ -379,47 +350,76 @@ fn jvm_version_name(loader: LoaderKind, version_id: &str, minecraft_version: &st
     }
 }
 
-fn pipe_game_output<T: Read + Send + 'static>(
-    output: T,
-    log: Arc<Mutex<File>>,
-    tx: Sender<LaunchEvent>,
-    ready: Arc<AtomicBool>,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let mut reader = BufReader::new(output);
-        let mut buffer = Vec::new();
-        loop {
-            buffer.clear();
-            let Ok(read) = reader.read_until(b'\n', &mut buffer) else {
-                break;
-            };
-            if read == 0 {
-                break;
-            }
-            while buffer
-                .last()
-                .is_some_and(|byte| matches!(byte, b'\r' | b'\n'))
-            {
-                buffer.pop();
-            }
-            let line = String::from_utf8_lossy(&buffer).into_owned();
+async fn run_game(prepared: PreparedLaunch, tx: Sender<LaunchEvent>) -> Result<(), LaunchError> {
+    let PreparedLaunch {
+        command,
+        runtime,
+        log_path,
+        log,
+    } = prepared;
+    let mut command = tokio::process::Command::from(command);
+    let log = Mutex::new(log);
+    let ready = AtomicBool::new(false);
+    let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel(1);
+    // Only Started and Ready use this channel. Noisy game logs cannot delay or
+    // discard these two state transitions by filling the bounded UI bridge.
+    let (state_tx, mut state_rx) = tokio::sync::mpsc::unbounded_channel();
+    let started_tx = state_tx.clone();
+    let started_log = log_path.clone();
+    let running = process::run_controlled(
+        &mut command,
+        process::OnDrop::Detach,
+        move |pid| {
+            let _ = started_tx.send(LaunchEvent::Started(LaunchResult {
+                pid,
+                java: runtime,
+                log_path: started_log,
+                stop: stop_tx,
+            }));
+        },
+        |_, line| {
             if let Ok(mut file) = log.lock() {
                 let _ = writeln!(file, "{line}");
             }
-            let is_ready = launch_line_is_ready(&line);
-            // The complete line is already persisted above. Sampling live output when
-            // the bounded UI bridge is full keeps noisy games from blocking their own
-            // stdout/stderr pipes while preventing unbounded memory growth.
-            let _ = tx.try_send(LaunchEvent::Log(line));
-            if is_ready
-                && ready
-                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_ok()
-            {
-                let _ = tx.blocking_send(LaunchEvent::Ready);
+            if launch_line_is_ready(&line) && !ready.swap(true, Ordering::SeqCst) {
+                let _ = state_tx.send(LaunchEvent::Ready);
             }
+            let _ = tx.try_send(LaunchEvent::Log(line));
+        },
+        async move {
+            if stop_rx.recv().await.is_none() {
+                // Dropping a UI control is not an explicit stop request.
+                std::future::pending::<()>().await;
+            }
+        },
+    );
+    tokio::pin!(running);
+    let result = loop {
+        tokio::select! {
+            biased;
+            Some(event) = state_rx.recv() => { let _ = tx.send(event).await; }
+            result = &mut running => break result,
         }
-    })
+    };
+    while let Ok(event) = state_rx.try_recv() {
+        let _ = tx.send(event).await;
+    }
+    let (status, terminated) = result?;
+    if let Ok(mut file) = log.lock() {
+        if terminated {
+            let _ = writeln!(file, "[AZULC] Instance terminated by user.");
+        }
+        let _ = file.flush();
+    }
+    let _ = tx
+        .send(LaunchEvent::Exited {
+            code: status.code(),
+            terminated,
+            ready: ready.load(Ordering::SeqCst),
+            log_path,
+        })
+        .await;
+    Ok(())
 }
 
 fn launch_line_is_ready(line: &str) -> bool {
@@ -692,6 +692,108 @@ fn without_classpath_switch(arguments: Vec<String>) -> Vec<String> {
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    #[test]
+    #[ignore = "subprocess fixture for launch monitor tests"]
+    fn monitor_fixture() {
+        let Ok(mode) = std::env::var("AZULC_MONITOR_FIXTURE") else {
+            return;
+        };
+        println!("[Render thread/INFO] fixture ready");
+        if mode == "stop" {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+        std::process::exit(0);
+    }
+
+    async fn monitor_fixture_events(mode: &str) -> (Vec<LaunchEvent>, String) {
+        let root = std::env::temp_dir().join(format!("azulc-monitor-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let log_path = root.join("launch.log");
+        let binary = std::env::current_exe().unwrap();
+        let mut command = Command::new(&binary);
+        command
+            .args([
+                "--exact",
+                "services::launcher::tests::monitor_fixture",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("AZULC_MONITOR_FIXTURE", mode);
+        let prepared = PreparedLaunch {
+            command,
+            runtime: JavaRuntime {
+                path: binary,
+                version: "fixture".into(),
+                major: 21,
+                vendor: "fixture".into(),
+            },
+            log_path: log_path.clone(),
+            log: File::create(&log_path).unwrap(),
+        };
+        // Exercise critical state forwarding even when the log bridge is full.
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let mut task = tokio::spawn(run_game(prepared, tx));
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let mut events = Vec::new();
+            let mut stop = None;
+            while let Some(event) = rx.recv().await {
+                if let LaunchEvent::Started(result) = &event {
+                    stop = Some(result.stop.clone());
+                }
+                if matches!(event, LaunchEvent::Ready) && mode == "stop" {
+                    stop.as_ref().unwrap().send(()).await.unwrap();
+                }
+                events.push(event);
+            }
+            (&mut task).await.unwrap().unwrap();
+            events
+        })
+        .await;
+        if result.is_err() {
+            task.abort();
+            let _ = task.await;
+        }
+        let log = std::fs::read_to_string(&log_path).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        (result.expect("monitor did not finish"), log)
+    }
+
+    #[tokio::test]
+    async fn monitor_reports_explicit_termination_after_ready_and_persists_log() {
+        let (events, log) = monitor_fixture_events("stop").await;
+        assert!(matches!(
+            events.last(),
+            Some(LaunchEvent::Exited {
+                terminated: true,
+                ready: true,
+                ..
+            })
+        ));
+        assert!(log.contains("fixture ready") && log.contains("Instance terminated by user"));
+    }
+
+    #[tokio::test]
+    async fn monitor_keeps_normal_exit_distinct_from_user_termination() {
+        let (events, _) = monitor_fixture_events("normal").await;
+        let states: Vec<_> = events
+            .iter()
+            .filter(|event| !matches!(event, LaunchEvent::Log(_)))
+            .collect();
+        assert!(matches!(
+            states.as_slice(),
+            [
+                LaunchEvent::Started(_),
+                LaunchEvent::Ready,
+                LaunchEvent::Exited {
+                    code: Some(0),
+                    terminated: false,
+                    ready: true,
+                    ..
+                }
+            ]
+        ));
+    }
 
     fn library(name: &str) -> Library {
         Library {

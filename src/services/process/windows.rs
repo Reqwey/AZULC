@@ -18,8 +18,24 @@ pub(super) fn configure(command: &mut tokio::process::Command) {
 pub(super) struct Guard(Option<OwnedHandle>);
 
 impl Guard {
-    pub(super) fn attach(child: &tokio::process::Child) -> io::Result<Self> {
-        attach_and_resume(child).map(|handle| Self(Some(handle)))
+    pub(super) fn terminate(&mut self) -> io::Result<()> {
+        if let Some(job) = &self.0 {
+            // SAFETY: the owned job handle is live for this call.
+            if unsafe {
+                windows_sys::Win32::System::JobObjects::TerminateJobObject(job.as_raw_handle(), 1)
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn attach(
+        child: &tokio::process::Child,
+        on_drop: super::OnDrop,
+    ) -> io::Result<Self> {
+        attach_and_resume(child, on_drop).map(|handle| Self(Some(handle)))
     }
 }
 
@@ -28,12 +44,16 @@ pub(super) async fn wait(
     group: &mut Guard,
 ) -> io::Result<std::process::ExitStatus> {
     let status = child.wait().await?;
+    group.terminate()?;
     // Close the job before draining pipes, which descendants may still hold.
     drop(group.0.take());
     Ok(status)
 }
 
-fn attach_and_resume(child: &tokio::process::Child) -> io::Result<OwnedHandle> {
+fn attach_and_resume(
+    child: &tokio::process::Child,
+    on_drop: super::OnDrop,
+) -> io::Result<OwnedHandle> {
     let process = child
         .raw_handle()
         .ok_or_else(|| io::Error::other("background process handle is unavailable"))?;
@@ -45,7 +65,9 @@ fn attach_and_resume(child: &tokio::process::Child) -> io::Result<OwnedHandle> {
     // SAFETY: the newly created handle is valid and ownership is transferred once.
     let job = unsafe { OwnedHandle::from_raw_handle(raw) };
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if on_drop == super::OnDrop::Terminate {
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    }
     // SAFETY: handles and the correctly sized information structure are live for
     // both calls. The non-inheritable OwnedHandle closes on completion or cancel.
     unsafe {

@@ -19,6 +19,16 @@ use iced::Task;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 impl Launcher {
+    pub(super) fn stop_instance(&mut self, attempt: &LaunchAttempt) {
+        if let Some(session) = self.launches.session_mut(attempt)
+            && session.stop_attempt().is_some()
+            && !session.request_stop()
+        {
+            self.notice =
+                Some("Could not send the termination request. Waiting for process status.".into());
+        }
+    }
+
     pub(super) fn launch_instance(&mut self, id: uuid::Uuid) -> Task<Message> {
         if self.launch_auth.is_blocking() {
             return Task::none();
@@ -136,6 +146,7 @@ impl Launcher {
         if let Some(session) = self.launches.session_mut(attempt) {
             match event {
                 launcher::LaunchEvent::Started(result) => {
+                    session.stop = Some(result.stop);
                     session.pid = Some(result.pid);
                     session.log_path = Some(result.log_path);
                     session.status = format!(
@@ -151,22 +162,33 @@ impl Launcher {
                 }
                 launcher::LaunchEvent::Ready => {
                     session.mark_ready();
-                    session.status =
-                        "Render thread detected · Minecraft started successfully".into();
-                    notice = Some(format!("{instance_name} started successfully."));
+                    if !session.stopping {
+                        session.status =
+                            "Render thread detected · Minecraft started successfully".into();
+                        notice = Some(format!("{instance_name} started successfully."));
+                    }
                 }
                 launcher::LaunchEvent::Exited {
                     code,
+                    terminated,
                     ready,
                     log_path,
                 } => {
                     session.active = false;
+                    session.stopping = false;
+                    session.stop = None;
+                    session.pid = None;
                     session.log_path = Some(log_path);
                     terminal = true;
                     if let Some(seconds) = session.ready_elapsed_seconds() {
                         play_time = Some((session.instance_id, seconds));
                     }
-                    if ready && code == Some(0) {
+                    if terminated {
+                        session.status = "Minecraft terminated by user.".into();
+                        session
+                            .logs
+                            .push("[AZULC] Instance terminated by user.".into());
+                    } else if ready && code == Some(0) {
                         session.status = "Minecraft exited normally.".into();
                     } else {
                         session.failed = true;
@@ -183,6 +205,9 @@ impl Launcher {
                 }
                 launcher::LaunchEvent::Failed { message, log_path } => {
                     session.active = false;
+                    session.stopping = false;
+                    session.stop = None;
+                    session.pid = None;
                     session.failed = true;
                     terminal = true;
                     session.status = format!("Launch failed: {message}");
