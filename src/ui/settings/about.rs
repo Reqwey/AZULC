@@ -8,51 +8,72 @@ use iced::{Alignment, Element, Fill, padding};
 use super::components::section;
 use crate::ui::components::{CONTENT_END_GAP, SCROLLBAR_GAP};
 
-pub(super) fn view(_app: &Launcher) -> Element<'_, Message> {
-    let architecture = row![
-        about_card(
-            "UI",
-            "ICED 0.14",
-            "Native Rust widgets",
-            "https://github.com/iced-rs/iced",
-        ),
-        about_card(
-            "BUILD",
-            env!("CARGO_PKG_VERSION"),
-            "Open Source",
-            "https://github.com/Reqwey/AZULC",
-        )
-    ]
-    .spacing(12);
+pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     let acknowledgements = section(
         "ACKNOWLEDGEMENTS",
         column![
+            acknowledgement_group("UI FRAMEWORK", UI_FRAMEWORKS),
             acknowledgement_group("SOURCE REFERENCES", SOURCE_REFERENCES),
             acknowledgement_group("DOWNLOAD SOURCES", DOWNLOAD_SOURCES),
             acknowledgement_group("FONTS", FONTS),
         ]
         .spacing(18),
     );
+    let mut actions = row![
+        button(
+            text("OPEN SOURCE ↗")
+                .font(theme::BODY_BOLD)
+                .size(12)
+                .width(Fill)
+                .height(Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+        )
+        .on_press(Message::OpenExternalUrl("https://github.com/Reqwey/AZULC"))
+        .width(160)
+        .height(28)
+        .padding([0, 12])
+        .style(theme::ghost_button)
+    ]
+    .spacing(16)
+    .align_y(Alignment::Center);
+    if app.release_update.available().is_some() {
+        actions = actions.push(
+            button(
+                text("UPDATE AVAILABLE")
+                    .size(12)
+                    .width(Fill)
+                    .align_x(Alignment::Center)
+                    .height(Fill)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::ShowUpdateDetails)
+            .width(160)
+            .height(28)
+            .padding([0, 12])
+            .style(theme::primary_button),
+        );
+    }
     scrollable(
         column![
             container(
                 column![
                     text("AZULC").size(68).color(theme::LAVENDER_SOFT),
-                    text("AZUSA MINECRAFT LAUNCHER")
+                    text(format!("AZUSA MINECRAFT LAUNCHER  //  VERSION {}", env!("CARGO_PKG_VERSION")))
                         .font(theme::BODY_BOLD)
                         .size(13)
                         .color(theme::LAVENDER),
                     text("A next-generation lightweight, high-performance Minecraft launcher and technology validation platform.")
                         .font(theme::BODY_FONT)
                         .size(12)
-                        .color(theme::TEXT)
+                        .color(theme::TEXT),
+                    container(actions).padding(padding::bottom(4))
                 ]
-                .spacing(5),
+                .spacing(14),
             )
             .width(Fill)
             .padding(24)
             .style(theme::hero),
-            architecture,
             acknowledgements
         ]
         .spacing(14)
@@ -65,50 +86,17 @@ pub(super) fn view(_app: &Launcher) -> Element<'_, Message> {
     .into()
 }
 
-fn about_card<'a>(
-    label: &'a str,
-    value: &'a str,
-    detail: &'a str,
-    url: &'static str,
-) -> Element<'a, Message> {
-    button(
-        row![
-            column![
-                text(label)
-                    .font(theme::BODY_BOLD)
-                    .size(13)
-                    .color(theme::MUTED),
-                text(value).size(24).color(theme::LAVENDER_SOFT),
-                text(detail)
-                    .font(theme::BODY_FONT)
-                    .size(13)
-                    .color(theme::TEXT),
-                text(url)
-                    .font(theme::BODY_FONT)
-                    .size(12)
-                    .color(theme::LAVENDER)
-            ]
-            .spacing(4),
-            Space::new().width(Fill),
-            text("OPEN ↗")
-                .font(theme::BODY_BOLD)
-                .size(12)
-                .color(theme::LAVENDER)
-        ]
-        .align_y(Alignment::Center),
-    )
-    .width(Fill)
-    .padding([17, 18])
-    .on_press(Message::OpenExternalUrl(url))
-    .style(theme::version_card_button)
-    .into()
-}
-
 struct Acknowledgement {
     name: &'static str,
     contribution: &'static str,
     url: &'static str,
 }
+
+const UI_FRAMEWORKS: &[Acknowledgement] = &[Acknowledgement {
+    name: "Iced 0.14",
+    contribution: "Native Rust UI framework",
+    url: "https://github.com/iced-rs/iced",
+}];
 
 const SOURCE_REFERENCES: &[Acknowledgement] = &[Acknowledgement {
     name: "SJMCL",

@@ -1,5 +1,6 @@
 mod delete_instance;
 mod launch_auth;
+mod release_notes;
 
 use crate::app::{Launcher, Message};
 use crate::theme;
@@ -22,6 +23,25 @@ pub(super) fn view<'a>(app: &'a Launcher, page: Element<'a, Message>) -> Element
             root,
             dismissible_backdrop(Message::CloseResourceBrowser),
             resource_browser::view(app)
+        ]
+        .into()
+    } else if let Some(notes) = &app.release_update.preview {
+        let can_download = app.release_update.available().is_some_and(|release| {
+            release
+                .download_url(std::env::consts::OS, std::env::consts::ARCH)
+                .is_some()
+        });
+        stack![
+            root,
+            dismissible_backdrop(Message::DismissReleaseNotes),
+            release_notes::view(notes, Some(can_download))
+        ]
+        .into()
+    } else if let Some(notes) = &app.release_notes {
+        stack![
+            root,
+            dismissible_backdrop(Message::DismissReleaseNotes),
+            release_notes::view(notes, None)
         ]
         .into()
     } else {

@@ -7,6 +7,7 @@ mod instance;
 mod launch;
 mod message;
 pub(crate) mod navigation;
+mod releases;
 mod storage_migration;
 mod thumbnails;
 mod update;
@@ -51,6 +52,8 @@ pub(crate) enum StorageMigrationState {
 }
 
 pub struct Launcher {
+    pub(crate) release_update: releases::UpdateState,
+    pub(crate) release_notes: Option<crate::domain::ReleaseNotes>,
     pub(crate) paths: Paths,
     pub(crate) persisted: PersistedState,
     pub(crate) route: Route,
@@ -113,7 +116,10 @@ impl Launcher {
             .filter(|account| account.avatar_rgba.is_none())
             .cloned()
             .collect::<Vec<_>>();
+        let release_notes = releases::cached_notes(&persisted);
         let app = Self {
+            release_update: releases::UpdateState::default(),
+            release_notes,
             paths,
             persisted,
             route: Route::Home,
@@ -157,6 +163,8 @@ impl Launcher {
             next_modal_id: 0,
         };
         let mut startup_tasks = vec![
+            releases::check_task(),
+            app.load_release_notes(),
             Task::perform(bootstrap::load_versions(policy), Message::VersionsLoaded),
             Task::perform(java::detect(), Message::JavaLoaded),
             Task::perform(

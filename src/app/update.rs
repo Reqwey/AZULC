@@ -22,6 +22,11 @@ use std::sync::{
 impl Launcher {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::ReleaseChecked(result) => self.release_checked(result),
+            Message::DownloadUpdate => return self.download_update(),
+            Message::ShowUpdateDetails => self.show_update_details(),
+            Message::ReleaseNotesLoaded(result) => self.release_notes_loaded(result),
+            Message::DismissReleaseNotes => self.dismiss_release_notes(),
             Message::Navigate(route) => {
                 if matches!(self.storage_migration, StorageMigrationState::Migrating(_)) {
                     self.notice = Some("Wait for the storage migration to finish.".into());

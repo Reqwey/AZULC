@@ -412,6 +412,10 @@ pub enum PipelineEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PersistedState {
     #[serde(default)]
+    pub seen_release_notes: Option<String>,
+    #[serde(default)]
+    pub cached_release_notes: Option<ReleaseNotes>,
+    #[serde(default)]
     pub accounts: Vec<Account>,
     #[serde(default)]
     pub selected_account: Option<Uuid>,
@@ -514,4 +518,10 @@ pub struct JavaRuntime {
     pub version: String,
     pub major: u32,
     pub vendor: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleaseNotes {
+    pub version: String,
+    pub body: String,
 }

@@ -27,6 +27,11 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    ReleaseChecked(Result<crate::services::updates::Release, String>),
+    DownloadUpdate,
+    ShowUpdateDetails,
+    ReleaseNotesLoaded(Result<crate::services::updates::Release, String>),
+    DismissReleaseNotes,
     Navigate(Route),
     WindowOpened(window::Id),
     WindowLocated(Option<window::Id>),

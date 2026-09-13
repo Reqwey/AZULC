@@ -16,10 +16,11 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
         .height(44)
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center);
-    let account = container(account_button(app))
-        .width(Fill)
-        .height(44)
-        .align_x(alignment::Horizontal::Right);
+    let account =
+        container(row![update_button(app), account_button(app)].align_y(Alignment::Center))
+            .width(Fill)
+            .height(44)
+            .align_x(alignment::Horizontal::Right);
 
     mouse_area(
         container(iced::widget::stack![title, account])
@@ -57,10 +58,15 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
     .align_y(Alignment::Center);
 
     mouse_area(
-        container(row![title, account_button(app), controls])
-            .height(44)
-            .width(Fill)
-            .style(theme::titlebar),
+        container(row![
+            title,
+            update_button(app),
+            account_button(app),
+            controls
+        ])
+        .height(44)
+        .width(Fill)
+        .style(theme::titlebar),
     )
     .on_press(Message::DragWindow)
     .on_double_click(Message::ToggleMaximize)
@@ -121,4 +127,27 @@ fn window_button<'a>(
             theme::window_button
         })
         .into()
+}
+
+fn update_button(app: &Launcher) -> Element<'_, Message> {
+    let Some(_) = app.release_update.available() else {
+        return Space::new().width(0).into();
+    };
+    // Reserve space for the primary button's 4px shadow inside the titlebar.
+    container(
+        button(
+            text("UPDATE AVAILABLE")
+                .size(12)
+                .height(Fill)
+                .align_y(Alignment::Center),
+        )
+        .on_press(Message::ShowUpdateDetails)
+        .height(28)
+        .padding([0, 12])
+        .style(theme::primary_button),
+    )
+    .height(44)
+    .padding(iced::padding::right(16).bottom(4))
+    .align_y(Alignment::Center)
+    .into()
 }

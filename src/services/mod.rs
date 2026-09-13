@@ -16,3 +16,5 @@ mod providers;
 pub mod shell;
 pub mod system_resources;
 pub mod thumbnail;
+
+pub mod updates;
