@@ -10,6 +10,7 @@ pub mod loader_catalog;
 pub mod minecraft;
 pub mod modpack;
 pub(crate) mod path_safety;
+pub(crate) mod process;
 mod providers;
 pub mod shell;
 pub mod system_resources;

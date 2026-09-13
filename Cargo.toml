@@ -39,7 +39,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
 
 [build-dependencies]
 embed-resource = "3.0"

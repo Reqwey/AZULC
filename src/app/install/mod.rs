@@ -304,6 +304,13 @@ pub(super) async fn record_install_event(
 
 fn format_install_event(event: &PipelineEvent) -> String {
     match event {
+        PipelineEvent::Progress(progress) if progress.stage == InstallStage::RunningProcessors => {
+            format!(
+                "[progress] {} | {}",
+                progress.stage.label(),
+                progress.detail
+            )
+        }
         PipelineEvent::Progress(progress) => format!(
             "[progress] {} | {} | files {}/{} | bytes {}/{} | {:.0} B/s",
             progress.stage.label(),
@@ -437,6 +444,20 @@ mod tests {
 
         assert!(!job.accepts(&attempt));
         assert!(job.can_retry(&attempt));
+    }
+
+    #[test]
+    fn processor_log_does_not_label_task_counts_as_bytes() {
+        let event = PipelineEvent::Progress(InstallProgress {
+            stage: InstallStage::RunningProcessors,
+            current: 2,
+            total: 5,
+            detail: "2/5 processors complete (40%)".into(),
+            ..InstallProgress::default()
+        });
+        let line = super::format_install_event(&event);
+        assert!(line.contains("2/5 processors complete (40%)"));
+        assert!(!line.contains("bytes"));
     }
 
     #[tokio::test]

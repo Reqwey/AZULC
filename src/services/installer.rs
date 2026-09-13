@@ -1,3 +1,8 @@
+mod forge_processors;
+mod forge_profile;
+mod modern_forge;
+mod processor_progress;
+
 use crate::{
     domain::{
         DownloadPolicy, InstallProgress, InstallRequest, InstallStage, Instance, InstanceOrigin,
@@ -17,6 +22,7 @@ use crate::{
     storage::Paths,
 };
 use futures::{StreamExt, stream};
+use processor_progress::ProcessorProgress;
 use reqwest::Client;
 use serde::Deserialize;
 use std::{
@@ -50,6 +56,10 @@ pub enum InstallError {
     InstallerExit(i32),
     #[error("the loader installer did not create a version profile")]
     MissingInstalledProfile,
+    #[error("invalid Forge install profile: {0}")]
+    ForgeProfile(String),
+    #[error("Forge processor failed: {0}")]
+    Processor(String),
     #[error("modpack import failed: {0}")]
     Modpack(String),
     #[error(transparent)]
@@ -814,10 +824,13 @@ fn modpack_format_label(format: ModpackFormat) -> &'static str {
 fn loader_stage(error: &InstallError) -> InstallStage {
     match error {
         InstallError::Minecraft(_) => InstallStage::DownloadingLoader,
-        InstallError::InstallerExit(_) => InstallStage::RunningProcessors,
+        InstallError::InstallerExit(_) | InstallError::Processor(_) => {
+            InstallStage::RunningProcessors
+        }
         InstallError::MissingJava(_)
         | InstallError::MissingInstalledProfile
-        | InstallError::Io(_) => InstallStage::InstallingLoader,
+        | InstallError::Io(_)
+        | InstallError::ForgeProfile(_) => InstallStage::InstallingLoader,
         InstallError::Network(_) | InstallError::Json(_) | InstallError::LoaderVersion(_) => {
             InstallStage::ResolvingLoader
         }
@@ -1012,6 +1025,12 @@ async fn install_forge_family(
         return Ok((profile_id, Some(version)));
     }
 
+    if kind == LoaderKind::Forge {
+        let profile_id =
+            modern_forge::install(client, root, base, &installer, tx, downloads).await?;
+        return Ok((profile_id, Some(version)));
+    }
+
     progress(
         &tx,
         InstallStage::InstallingLoader,
@@ -1032,7 +1051,9 @@ async fn install_forge_family(
     progress(
         &tx,
         InstallStage::RunningProcessors,
-        &format!("{name} is downloading dependencies and running processors"),
+        &format!(
+            "{name} installer is preparing dependencies; waiting for processor progress. See log."
+        ),
     );
 
     let mut command = Command::new(&runtime.path);
@@ -1047,13 +1068,19 @@ async fn install_forge_family(
         .kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(java::CREATE_NO_WINDOW);
+    let processors = ProcessorProgress::from_installer(&installer).unwrap_or_else(|error| {
+        let _ = tx.send(PipelineEvent::Log(format!(
+            "[pipeline] Processor progress unavailable: {error}"
+        )));
+        ProcessorProgress::default()
+    });
     let mut child = command.spawn()?;
     let stdout = child.stdout.take().map(BufReader::new);
     let stderr = child.stderr.take().map(BufReader::new);
-    let out_task = tokio::spawn(pipe_lines(stdout, tx.clone(), "installer"));
+    let out_task = tokio::spawn(pipe_lines(stdout, tx.clone(), "installer", processors));
     let err_task = tokio::spawn(pipe_stderr(stderr, tx.clone(), "installer!"));
     let status = child.wait().await?;
-    let _ = tokio::join!(out_task, err_task);
+    let (processors, _) = tokio::join!(out_task, err_task);
     if !status.success() {
         return Err(InstallError::InstallerExit(status.code().unwrap_or(-1)));
     }
@@ -1061,6 +1088,11 @@ async fn install_forge_family(
         find_installed_profile(root, &base.id, &version, expected_profile_id.as_deref())
             .await?
             .ok_or(InstallError::MissingInstalledProfile)?;
+    if let Ok(processors) = processors
+        && let Some(progress) = processors.finished()
+    {
+        let _ = tx.send(PipelineEvent::Progress(progress));
+    }
     Ok((profile_id, Some(version)))
 }
 
@@ -1094,7 +1126,7 @@ async fn prepare_neoforge_dependencies(
 
     let mut planned = HashMap::<PathBuf, DownloadItem>::new();
     for library in libraries {
-        if let Some(item) = neoforge_library_download(root, &library, router)? {
+        if let Some(item) = loader_library_download(root, &library, router)? {
             planned.entry(item.path.clone()).or_insert(item);
         }
     }
@@ -1185,7 +1217,7 @@ fn read_installer_json<T: serde::de::DeserializeOwned>(
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
-fn neoforge_library_download(
+fn loader_library_download(
     root: &Path,
     library: &minecraft::Library,
     router: SourceRouter,
@@ -1228,9 +1260,8 @@ fn neoforge_library_download(
 }
 
 fn checked_library_path(value: &str) -> Result<PathBuf, InstallError> {
-    path_safety::relative_path(value).ok_or_else(|| {
-        InstallError::LoaderVersion(format!("unsafe NeoForge library path {value:?}"))
-    })
+    path_safety::relative_path(value)
+        .ok_or_else(|| InstallError::LoaderVersion(format!("unsafe loader library path {value:?}")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1349,13 +1380,18 @@ async fn pipe_lines(
     reader: Option<BufReader<tokio::process::ChildStdout>>,
     tx: UnboundedSender<PipelineEvent>,
     tag: &'static str,
-) {
+    mut processors: ProcessorProgress,
+) -> ProcessorProgress {
     if let Some(reader) = reader {
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(progress) = processors.observe(&line) {
+                let _ = tx.send(PipelineEvent::Progress(progress));
+            }
             let _ = tx.send(PipelineEvent::Log(format!("[{tag}] {line}")));
         }
     }
+    processors
 }
 
 // stderr and stdout have different concrete types, so keep a second small adapter.
@@ -1829,7 +1865,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let item = neoforge_library_download(
+        let item = loader_library_download(
             root,
             &library,
             SourceRouter::new(crate::domain::DownloadSource::Bmcl),

@@ -425,6 +425,7 @@ dependencies = [
  "quick-xml 0.42.0",
  "reqwest",
  "rfd",
+ "rustix 1.1.4",
  "semver",
  "serde",
  "serde_json",
