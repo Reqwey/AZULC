@@ -57,38 +57,6 @@ instances/<uuid>/         isolated game directories, content, and launch logs
 state.json                accounts/tokens, instances, download policy, and settings
 ```
 
-## Automated releases
-
-Run the [release workflow](.github/workflows/release.yml) manually from
-**Actions → Release → Run workflow**, selecting the branch to release.
-The workflow reads the `x.x.x` package version from that branch's `Cargo.toml`
-and publishes GitHub Release `vx.x.x`, with an automatically created tag pointing
-to the selected commit and generated release notes. Pushes do not trigger releases,
-and commit titles have no effect. The workflow must be present on the default
-branch for GitHub to show the manual trigger.
-
-Before the first release, add these repository Actions secrets under
-**Settings → Secrets and variables → Actions**:
-
-- `AZULC_CURSEFORGE_API_KEY`
-- `AZULC_MICROSOFT_CLIENT_ID`
-
-These values are embedded into the distributed executable, just like local builds.
-Update `Cargo.toml` to the release version and regenerate `Cargo.lock` with
-`cargo check`, then commit both files and push before running the workflow.
-No version input or manual tag is needed.
-
-All builds must succeed before publication. Release assets include:
-
-- Windows x64: a ZIP containing `azulc.exe`.
-- macOS Intel and Apple Silicon: separate ZIPs containing `AZULC.app`, built on
-  `macos-26-intel` and `macos-latest`, respectively.
-- Linux x64: a tar.gz containing `azulc`, built on the `ubuntu-latest` runner.
-- `SHA256SUMS.txt`: checksums for the archives.
-
-The application packages are unsigned. Linux requires a desktop environment with
-the X11/Wayland and xkbcommon runtime libraries. Use a new version for each release;
-an existing release is never overwritten.
 
 ## Architecture
 

@@ -18,6 +18,7 @@ use crate::{
         modpack::ModpackPlan,
         system_resources::SystemResources,
         thumbnail,
+        updates::Release,
     },
     storage::MigrationOutcome,
 };
@@ -27,10 +28,10 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    ReleaseChecked(Result<crate::services::updates::Release, String>),
+    ReleaseChecked(Result<Release, String>),
     DownloadUpdate,
     ShowUpdateDetails,
-    ReleaseNotesLoaded(Result<crate::services::updates::Release, String>),
+    ReleaseNotesLoaded(Result<Release, String>),
     DismissReleaseNotes,
     Navigate(Route),
     WindowOpened(window::Id),
