@@ -9,6 +9,7 @@ pub mod launcher;
 pub mod loader_catalog;
 pub mod minecraft;
 pub mod modpack;
+pub(crate) mod path_locks;
 pub(crate) mod path_safety;
 pub(crate) mod process;
 mod providers;

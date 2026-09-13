@@ -106,6 +106,7 @@ impl Launcher {
         let instance_files = instances.clone();
         let instance_file_paths = paths.clone();
         let policy = persisted.settings.download.clone();
+        crate::services::download::set_concurrency(policy.concurrency);
         let accounts_missing_avatars = persisted
             .accounts
             .iter()

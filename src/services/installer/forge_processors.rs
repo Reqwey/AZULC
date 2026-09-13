@@ -111,6 +111,9 @@ pub(super) async fn execute(
     }
     report(tx, 0, processors.len(), "Preparing processors");
     for (index, processor) in processors.iter().enumerate() {
+        if tx.is_closed() {
+            return Err(InstallError::Cancelled);
+        }
         report(
             tx,
             index,
@@ -205,14 +208,23 @@ async fn execute_one(
         .arg(main)
         .args(&processor.args)
         .current_dir(root);
-    let status = process::run(&mut command, |stream, line| {
-        let tag = match stream {
-            OutputStream::Stdout => "processor",
-            OutputStream::Stderr => "processor!",
-        };
-        let _ = tx.send(PipelineEvent::Log(format!("[{tag}] {line}")));
-    })
+    let (status, cancelled) = process::run_controlled(
+        &mut command,
+        process::OnDrop::Terminate,
+        |_| {},
+        |stream, line| {
+            let tag = match stream {
+                OutputStream::Stdout => "processor",
+                OutputStream::Stderr => "processor!",
+            };
+            let _ = tx.send(PipelineEvent::Log(format!("[{tag}] {line}")));
+        },
+        tx.closed(),
+    )
     .await?;
+    if cancelled {
+        return Err(InstallError::Cancelled);
+    }
     if !status.success() {
         return Err(InstallError::InstallerExit(status.code().unwrap_or(-1)));
     }

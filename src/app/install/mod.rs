@@ -6,10 +6,7 @@ mod wizard;
 pub(crate) use modpacks::ModpackBrowserState;
 pub(crate) use wizard::{LoaderCatalogState, WizardDraft};
 
-use super::{
-    Launcher, Message,
-    navigation::{Route, WizardStep},
-};
+use super::{Launcher, Message, navigation::Route};
 use crate::{
     domain::{InstallProgress, InstallRequest, InstallStage, PipelineEvent},
     services::installer,
@@ -111,10 +108,6 @@ impl Launcher {
         if !job.can_retry(&attempt) {
             return;
         }
-        if self.jobs.values().any(|job| job.active) {
-            self.notice = Some("Another install pipeline is already active.".into());
-            return;
-        }
 
         let job = self
             .jobs
@@ -182,7 +175,6 @@ impl Launcher {
             if self.route == Route::Installation(id) {
                 self.route = Route::instance(id);
             }
-            self.wizard_step = WizardStep::Version;
             self.save();
             self.notice = Some("Instance installed. It is ready to launch.".into());
             return self.refresh_insights();

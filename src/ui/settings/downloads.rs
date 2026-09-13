@@ -51,7 +51,7 @@ pub(super) fn view(app: &Launcher) -> Element<'_, Message> {
                         .size(12)
                         .color(theme::MUTED),
                     text(format!(
-                        "Detected {worker_limit} CPU hardware threads; this defines the worker limit."
+                        "Shared by all downloads. Detected {worker_limit} CPU hardware threads."
                     ))
                     .font(theme::BODY_FONT)
                     .size(12)

@@ -25,6 +25,9 @@ impl Launcher {
         let path = self.paths.instance_dir(id);
         Task::perform(
             async move {
+                let lock =
+                    crate::services::path_locks::for_path(&path).map_err(|e| e.to_string())?;
+                let _access = lock.write_owned().await;
                 tokio::fs::remove_dir_all(path)
                     .await
                     .or_else(|error| {

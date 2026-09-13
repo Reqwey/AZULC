@@ -5,6 +5,21 @@ use std::{
     time::Duration,
 };
 
+async fn run(
+    command: &mut Command,
+    on_line: impl Fn(OutputStream, String) + Sync,
+) -> io::Result<ExitStatus> {
+    run_controlled(
+        command,
+        OnDrop::Terminate,
+        |_| {},
+        on_line,
+        std::future::pending(),
+    )
+    .await
+    .map(|(status, _)| status)
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {

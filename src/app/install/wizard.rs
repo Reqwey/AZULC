@@ -110,13 +110,6 @@ impl Launcher {
     }
 
     pub(in crate::app) fn start_install(&mut self) -> Task<Message> {
-        if self.jobs.values().any(|job| job.active) {
-            self.notice = Some(
-                "Another install pipeline is active. Shared files are installed one at a time."
-                    .into(),
-            );
-            return Task::none();
-        }
         let Some(version) = self.wizard.selected_version.clone() else {
             self.notice = Some("Choose a Minecraft version first.".into());
             return Task::none();

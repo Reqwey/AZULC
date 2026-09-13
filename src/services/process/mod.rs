@@ -33,24 +33,6 @@ pub(crate) enum OnDrop {
     Detach,
 }
 
-/// Runs without a console or stdin, forwarding both streams until fully drained.
-/// Dropping the future terminates the managed group before dropping/reaping the
-/// direct child. Callers never need to parse output to determine completion.
-pub(crate) async fn run(
-    command: &mut Command,
-    on_line: impl Fn(OutputStream, String) + Sync,
-) -> io::Result<ExitStatus> {
-    run_controlled(
-        command,
-        OnDrop::Terminate,
-        |_| {},
-        on_line,
-        std::future::pending(),
-    )
-    .await
-    .map(|(status, _)| status)
-}
-
 /// An explicit stop kills the group, then waits for exit and drains its output.
 /// The boolean reports whether a stop was handled before normal completion.
 /// `Detach` preserves a running game when the monitor or launcher is closed.

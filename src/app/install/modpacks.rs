@@ -135,13 +135,6 @@ impl Launcher {
         minecraft_version: String,
         loader: LoaderSpec,
     ) -> Task<Message> {
-        if self.jobs.values().any(|job| job.active) {
-            self.notice = Some(
-                "Another install pipeline is active. Shared files are installed one at a time."
-                    .into(),
-            );
-            return Task::none();
-        }
         let id = Uuid::new_v4();
         let version = modpack
             .version_name

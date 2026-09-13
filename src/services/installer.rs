@@ -2,6 +2,8 @@ mod forge_processors;
 mod forge_profile;
 mod modern_forge;
 mod processor_progress;
+mod workers;
+pub(crate) use workers::has_pending_work;
 
 use crate::{
     domain::{
@@ -13,7 +15,7 @@ use crate::{
         java, loader_catalog,
         minecraft::{self, DownloadItem, VersionJson},
         modpack::{self, ModpackFile, ModpackFormat, ModpackPlan},
-        path_safety,
+        path_safety, process,
         providers::{
             curseforge::{self, ResourceClass},
             modrinth::{self, ContentType as ModrinthContentType, ModrinthClient},
@@ -29,14 +31,9 @@ use std::{
     collections::HashMap,
     io::Read,
     path::{Path, PathBuf},
-    process::Stdio,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::Command,
-    sync::mpsc::UnboundedSender,
-};
+use tokio::{process::Command, sync::mpsc::UnboundedSender};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -62,6 +59,8 @@ pub enum InstallError {
     Processor(String),
     #[error("modpack import failed: {0}")]
     Modpack(String),
+    #[error("installation cancelled")]
+    Cancelled,
     #[error(transparent)]
     CurseForge(#[from] curseforge::CurseForgeError),
     #[error(transparent)]
@@ -83,7 +82,17 @@ pub enum InstallError {
 }
 
 pub async fn run(request: InstallRequest, paths: Paths, tx: UnboundedSender<PipelineEvent>) {
-    let result = run_inner(request, paths, tx.clone()).await;
+    // The worker owns all filesystem leases. On UI cancellation its event
+    // receiver closes; awaited blocking writes and process exit finish before
+    // releasing leases, so an immediate retry cannot race the previous attempt.
+    let worker_tx = tx.clone();
+    let result = workers::run(run_inner(request, paths, worker_tx)).await;
+    let result = result.unwrap_or_else(|error| {
+        Err((
+            InstallStage::Queued,
+            InstallError::Io(std::io::Error::other(error.to_string())),
+        ))
+    });
     if let Err((stage, error)) = result {
         let _ = tx.send(PipelineEvent::Failed {
             stage,
@@ -97,8 +106,19 @@ async fn run_inner(
     paths: Paths,
     tx: UnboundedSender<PipelineEvent>,
 ) -> Result<(), (InstallStage, InstallError)> {
+    let instance_lock =
+        crate::services::path_locks::for_path(&paths.instance_dir(request.instance_id))
+            .map_err(|e| (InstallStage::Queued, InstallError::Io(e)))?;
+    let _instance = tokio::select! {
+        guard = instance_lock.write_owned() => guard,
+        () = tx.closed() => return Err((InstallStage::Queued, InstallError::Cancelled)),
+    };
+    let cache_lock = crate::services::path_locks::for_path(&paths.minecraft)
+        .map_err(|e| (InstallStage::Queued, InstallError::Io(e)))?;
     let client = Client::builder()
         .user_agent("AZULC/0.1.0")
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .read_timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| (InstallStage::ResolvingMinecraft, InstallError::Network(e)))?;
     let router = SourceRouter::from_policy(&request.download_policy);
@@ -112,7 +132,12 @@ async fn run_inner(
 
     let prepared_modpack = match request.modpack.clone() {
         Some(spec) => {
-            let prepared = prepare_modpack(&spec, &paths, concurrency, tx.clone()).await?;
+            let prepared = workers::until_cancelled(
+                &tx,
+                prepare_modpack(&spec, &paths, concurrency, tx.clone()),
+            )
+            .await
+            .map_err(|e| (InstallStage::Cancelled, e))??;
             request.minecraft_version = prepared.plan.metadata.minecraft_version.clone();
             request.loader = prepared.plan.metadata.loader.clone();
             request.settings.modpack_memory_reference_mb =
@@ -146,10 +171,13 @@ async fn run_inner(
         InstallStage::ResolvingMinecraft,
         "Connecting to the Minecraft version service",
     );
-    let (base, raw) =
-        minecraft::fetch_version_with_router(&client, &request.minecraft_version, router)
-            .await
-            .map_err(|e| (InstallStage::ResolvingMinecraft, e.into()))?;
+    let (base, raw) = workers::until_cancelled(
+        &tx,
+        minecraft::fetch_version_with_router(&client, &request.minecraft_version, router),
+    )
+    .await
+    .map_err(|e| (InstallStage::ResolvingMinecraft, e))?
+    .map_err(|e| (InstallStage::ResolvingMinecraft, e.into()))?;
     safe_profile_id(&base.id).map_err(|error| (InstallStage::PlanningMinecraft, error))?;
     let _ = tx.send(PipelineEvent::Log(format!(
         "Retrieved Minecraft {} metadata",
@@ -161,10 +189,22 @@ async fn run_inner(
         InstallStage::PlanningMinecraft,
         "Planning the client, libraries, natives, and assets",
     );
-    let downloads =
-        minecraft::plan_vanilla_with_router(&client, &paths.minecraft, &base, &raw, router)
-            .await
-            .map_err(|e| (InstallStage::PlanningMinecraft, e.into()))?;
+    progress(
+        &tx,
+        InstallStage::PlanningMinecraft,
+        "Waiting for access to shared Minecraft files",
+    );
+    let base_access = tokio::select! {
+        guard = cache_lock.clone().read_owned() => guard,
+        () = tx.closed() => return Err((InstallStage::PlanningMinecraft, InstallError::Cancelled)),
+    };
+    let downloads = workers::until_cancelled(
+        &tx,
+        minecraft::plan_vanilla_with_router(&client, &paths.minecraft, &base, &raw, router),
+    )
+    .await
+    .map_err(|e| (InstallStage::PlanningMinecraft, e))?
+    .map_err(|e| (InstallStage::PlanningMinecraft, e.into()))?;
     let count = downloads.len();
     let _ = tx.send(PipelineEvent::Log(format!(
         "Download plan contains {count} files with {concurrency} workers"
@@ -186,18 +226,36 @@ async fn run_inner(
         "Every Minecraft base file is present and verified",
     );
 
+    drop(base_access);
+    let loader_access = if request.loader.kind != LoaderKind::Vanilla {
+        progress(
+            &tx,
+            InstallStage::InstallingLoader,
+            "Waiting for another task to finish writing shared loader files",
+        );
+        Some(tokio::select! {
+            guard = cache_lock.clone().write_owned() => guard,
+            () = tx.closed() => return Err((InstallStage::InstallingLoader, InstallError::Cancelled)),
+        })
+    } else {
+        None
+    };
     let (version_id, resolved_loader_version) = match request.loader.kind {
         LoaderKind::Vanilla => (base.id.clone(), None),
-        LoaderKind::Fabric => install_fabric(
-            &client,
-            &paths.minecraft,
-            &base,
-            request.loader.version.as_deref(),
-            tx.clone(),
-            router,
-            &request.download_policy,
+        LoaderKind::Fabric => workers::until_cancelled(
+            &tx,
+            install_fabric(
+                &client,
+                &paths.minecraft,
+                &base,
+                request.loader.version.as_deref(),
+                tx.clone(),
+                router,
+                &request.download_policy,
+            ),
         )
         .await
+        .map_err(|e| (loader_stage(&e), e))?
         .map_err(|e| (loader_stage(&e), e))?,
         LoaderKind::Forge | LoaderKind::NeoForge => install_forge_family(
             &client,
@@ -214,6 +272,11 @@ async fn run_inner(
         .await
         .map_err(|e| (loader_stage(&e), e))?,
     };
+
+    drop(loader_access);
+    if tx.is_closed() {
+        return Err((InstallStage::InstallingLoader, InstallError::Cancelled));
+    }
 
     let game_dir = paths.instance_dir(request.instance_id);
     tokio::fs::create_dir_all(game_dir.join("mods"))
@@ -256,6 +319,10 @@ async fn run_inner(
         InstallStage::Finalizing,
         "Creating the isolated game directory and instance record",
     );
+    let _final_access = tokio::select! {
+        guard = cache_lock.read_owned() => guard,
+        () = tx.closed() => return Err((InstallStage::Finalizing, InstallError::Cancelled)),
+    };
     materialize_instance_version_files(&paths.minecraft, &game_dir, &base.id, &version_id)
         .await
         .map_err(|error| (InstallStage::Finalizing, InstallError::Io(error)))?;
@@ -435,7 +502,7 @@ async fn prepare_modpack(
             };
             let progress_tx = tx.clone();
             let progress_label = label.clone();
-            download::download_batch(
+            download::download_batch_until(
                 api.download_client(),
                 vec![DownloadSpec {
                     urls: vec![url.to_string()],
@@ -446,6 +513,7 @@ async fn prepare_modpack(
                     label,
                 }],
                 concurrency,
+                tx.closed(),
                 move |snapshot| {
                     send_download_progress(
                         &progress_tx,
@@ -528,7 +596,7 @@ async fn prepare_modpack(
                 .join(&archive_name);
             let progress_tx = tx.clone();
             let progress_label = resolved.version.name.clone();
-            download::download_batch(
+            download::download_batch_until(
                 api.download_client(),
                 vec![DownloadSpec {
                     urls: vec![resolved.install.url.clone()],
@@ -539,6 +607,7 @@ async fn prepare_modpack(
                     label: archive_name,
                 }],
                 concurrency,
+                tx.closed(),
                 move |snapshot| {
                     send_download_progress(
                         &progress_tx,
@@ -685,14 +754,16 @@ async fn install_modpack_content(
         })?);
         curseforge_client = Some(api.download_client());
         let root = game_dir.to_path_buf();
-        let resolved = stream::iter(curseforge_files.into_iter().map(|(project_id, file_id)| {
+        let resolving = stream::iter(curseforge_files.into_iter().map(|(project_id, file_id)| {
             let api = Arc::clone(&api);
             let root = root.clone();
             async move { resolve_curseforge_content(api, root, project_id, file_id).await }
         }))
         .buffer_unordered(concurrency.clamp(1, crate::domain::cpu_thread_count()))
-        .collect::<Vec<_>>()
-        .await;
+        .collect::<Vec<_>>();
+        let resolved = workers::until_cancelled(&tx, resolving)
+            .await
+            .map_err(|e| (InstallStage::DownloadingModpackContent, e))?;
         for result in resolved {
             curseforge_specs
                 .push(result.map_err(|error| (InstallStage::DownloadingModpackContent, error))?);
@@ -706,10 +777,11 @@ async fn install_modpack_content(
     )));
     if !direct_specs.is_empty() {
         let progress_tx = tx.clone();
-        download::download_batch(
+        download::download_batch_until(
             download_client,
             direct_specs,
             concurrency,
+            tx.closed(),
             move |snapshot| {
                 send_download_progress(
                     &progress_tx,
@@ -725,14 +797,20 @@ async fn install_modpack_content(
     if !curseforge_specs.is_empty() {
         let progress_tx = tx.clone();
         let client = curseforge_client.expect("CurseForge specs always have a scoped CDN client");
-        download::download_batch(client, curseforge_specs, concurrency, move |snapshot| {
-            send_download_progress(
-                &progress_tx,
-                InstallStage::DownloadingModpackContent,
-                "Downloading CurseForge modpack content",
-                snapshot,
-            );
-        })
+        download::download_batch_until(
+            client,
+            curseforge_specs,
+            concurrency,
+            tx.closed(),
+            move |snapshot| {
+                send_download_progress(
+                    &progress_tx,
+                    InstallStage::DownloadingModpackContent,
+                    "Downloading CurseForge modpack content",
+                    snapshot,
+                );
+            },
+        )
         .await
         .map_err(|error| (InstallStage::DownloadingModpackContent, error.into()))?;
     }
@@ -823,6 +901,7 @@ fn modpack_format_label(format: ModpackFormat) -> &'static str {
 
 fn loader_stage(error: &InstallError) -> InstallStage {
     match error {
+        InstallError::Cancelled => InstallStage::Cancelled,
         InstallError::Minecraft(_) => InstallStage::DownloadingLoader,
         InstallError::InstallerExit(_) | InstallError::Processor(_) => {
             InstallStage::RunningProcessors
@@ -964,10 +1043,17 @@ async fn install_forge_family(
     );
     let version = match requested.filter(|v| !v.trim().is_empty()) {
         requested if kind == LoaderKind::Forge => {
-            resolve_forge(client, &base.id, requested, downloads.router).await?
+            workers::until_cancelled(
+                &tx,
+                resolve_forge(client, &base.id, requested, downloads.router),
+            )
+            .await??
         }
         Some(v) => normalize_forge_version(kind, &base.id, v),
-        None => resolve_neoforge(client, &base.id, downloads.router).await?,
+        None => {
+            workers::until_cancelled(&tx, resolve_neoforge(client, &base.id, downloads.router))
+                .await??
+        }
     };
     let (url, filename) = forge_installer_url(kind, &base.id, &version);
     safe_file_name(&filename)?;
@@ -1062,25 +1148,40 @@ async fn install_forge_family(
         .arg(&installer)
         .arg("--installClient")
         .arg(root)
-        .current_dir(root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    command.creation_flags(java::CREATE_NO_WINDOW);
-    let processors = ProcessorProgress::from_installer(&installer).unwrap_or_else(|error| {
-        let _ = tx.send(PipelineEvent::Log(format!(
-            "[pipeline] Processor progress unavailable: {error}"
-        )));
-        ProcessorProgress::default()
-    });
-    let mut child = command.spawn()?;
-    let stdout = child.stdout.take().map(BufReader::new);
-    let stderr = child.stderr.take().map(BufReader::new);
-    let out_task = tokio::spawn(pipe_lines(stdout, tx.clone(), "installer", processors));
-    let err_task = tokio::spawn(pipe_stderr(stderr, tx.clone(), "installer!"));
-    let status = child.wait().await?;
-    let (processors, _) = tokio::join!(out_task, err_task);
+        .current_dir(root);
+    let processors = Mutex::new(
+        ProcessorProgress::from_installer(&installer).unwrap_or_else(|error| {
+            let _ = tx.send(PipelineEvent::Log(format!(
+                "[pipeline] Processor progress unavailable: {error}"
+            )));
+            ProcessorProgress::default()
+        }),
+    );
+    let (status, cancelled) = process::run_controlled(
+        &mut command,
+        process::OnDrop::Terminate,
+        |_| {},
+        |stream, line| {
+            let tag = if stream == process::OutputStream::Stdout {
+                if let Some(progress) = processors
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .observe(&line)
+                {
+                    let _ = tx.send(PipelineEvent::Progress(progress));
+                }
+                "installer"
+            } else {
+                "installer!"
+            };
+            let _ = tx.send(PipelineEvent::Log(format!("[{tag}] {line}")));
+        },
+        tx.closed(),
+    )
+    .await?;
+    if cancelled {
+        return Err(InstallError::Cancelled);
+    }
     if !status.success() {
         return Err(InstallError::InstallerExit(status.code().unwrap_or(-1)));
     }
@@ -1088,8 +1189,10 @@ async fn install_forge_family(
         find_installed_profile(root, &base.id, &version, expected_profile_id.as_deref())
             .await?
             .ok_or(InstallError::MissingInstalledProfile)?;
-    if let Ok(processors) = processors
-        && let Some(progress) = processors.finished()
+    if let Some(progress) = processors
+        .into_inner()
+        .unwrap_or_else(|e| e.into_inner())
+        .finished()
     {
         let _ = tx.send(PipelineEvent::Progress(progress));
     }
@@ -1374,38 +1477,6 @@ async fn install_legacy_forge(
 
 fn zip_io_error(error: zip::result::ZipError) -> std::io::Error {
     std::io::Error::other(error)
-}
-
-async fn pipe_lines(
-    reader: Option<BufReader<tokio::process::ChildStdout>>,
-    tx: UnboundedSender<PipelineEvent>,
-    tag: &'static str,
-    mut processors: ProcessorProgress,
-) -> ProcessorProgress {
-    if let Some(reader) = reader {
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(progress) = processors.observe(&line) {
-                let _ = tx.send(PipelineEvent::Progress(progress));
-            }
-            let _ = tx.send(PipelineEvent::Log(format!("[{tag}] {line}")));
-        }
-    }
-    processors
-}
-
-// stderr and stdout have different concrete types, so keep a second small adapter.
-async fn pipe_stderr(
-    reader: Option<BufReader<tokio::process::ChildStderr>>,
-    tx: UnboundedSender<PipelineEvent>,
-    tag: &'static str,
-) {
-    if let Some(reader) = reader {
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx.send(PipelineEvent::Log(format!("[{tag}] {line}")));
-        }
-    }
 }
 
 async fn ensure_launcher_profile(root: &Path) -> Result<(), std::io::Error> {

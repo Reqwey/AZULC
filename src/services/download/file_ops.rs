@@ -26,11 +26,9 @@ pub(crate) fn staging_path(destination: &Path) -> io::Result<PathBuf> {
 ///
 /// Existing destination data remains intact if replacement fails.
 pub(crate) async fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
-    let source = source.to_path_buf();
-    let destination = destination.to_path_buf();
-    tokio::task::spawn_blocking(move || replace_file_sync(&source, &destination))
-        .await
-        .map_err(|error| io::Error::other(format!("atomic replacement worker failed: {error}")))?
+    // Commit without yielding: cancellation must not release a destination
+    // lease while a detached rename can still publish an older attempt.
+    replace_file_sync(source, destination)
 }
 
 /// Writes bytes to a sibling staging file and atomically publishes them.

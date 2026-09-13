@@ -854,6 +854,9 @@ impl Launcher {
             Message::DownloadConcurrencyChanged(value) => {
                 self.persisted.settings.download.concurrency =
                     usize::from(value).clamp(1, self.system_resources.cpu_threads.max(1));
+                crate::services::download::set_concurrency(
+                    self.persisted.settings.download.concurrency,
+                );
                 self.save();
             }
             Message::CancelInstall(attempt) => self.cancel_install(&attempt),

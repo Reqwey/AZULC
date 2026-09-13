@@ -1,8 +1,12 @@
 //! Download orchestration and its file-integrity support.
 
+mod budget;
+#[cfg(test)]
+mod concurrency_tests;
 pub(crate) mod file_ops;
 pub(crate) mod integrity;
 pub mod source;
+pub(crate) use budget::set_concurrency;
 
 use crate::domain::cpu_thread_count;
 use futures::{StreamExt, stream};
@@ -31,6 +35,23 @@ const REPORT_INTERVAL: Duration = Duration::from_millis(250);
 // not fail the whole installation after the other files have completed.
 const MAX_ATTEMPTS_PER_URL: usize = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_millis(250);
+
+pub async fn download_batch_until<F>(
+    client: Client,
+    specs: Vec<DownloadSpec>,
+    concurrency: usize,
+    cancelled: impl Future<Output = ()>,
+    on_progress: F,
+) -> Result<(), DownloadError>
+where
+    F: Fn(DownloadSnapshot) + Send + Sync + 'static,
+{
+    tokio::select! {
+        biased;
+        () = cancelled => Err(DownloadError::Worker("download cancelled".into())),
+        result = download_batch(client, specs, concurrency, on_progress) => result,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadSpec {
@@ -259,12 +280,16 @@ async fn download_spec(
     spec: &DownloadSpec,
     tracker: &ProgressTracker,
 ) -> Result<(), DownloadError> {
+    let destination_lock = crate::services::path_locks::for_path(&spec.destination)
+        .map_err(|source| io_error(&spec.destination, source))?;
+    let _destination = destination_lock.write_owned().await;
     if let Some(size) = reusable_file(spec).await? {
         tracker.current.fetch_add(size, Ordering::Relaxed);
         tracker.files_done.fetch_add(1, Ordering::Relaxed);
         return Ok(());
     }
 
+    let _transfer = budget::global().acquire().await;
     if let Some(parent) = spec.destination.parent() {
         fs::create_dir_all(parent)
             .await

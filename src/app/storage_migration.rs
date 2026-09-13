@@ -94,6 +94,7 @@ impl Launcher {
     fn storage_migration_blocked(&self) -> bool {
         self.launches.has_active()
             || self.jobs.values().any(|job| job.active)
+            || crate::services::installer::has_pending_work()
             || !self.active_resource_downloads.is_empty()
             || !self.deleting_instances.is_empty()
             || self.instance_files_repairing

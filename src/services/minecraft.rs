@@ -409,17 +409,23 @@ pub async fn download_batch_with_policy(
 
     let progress_tx = tx.clone();
     let progress_detail = detail.to_owned();
-    download::download_batch(client, specs, policy.concurrency, move |snapshot| {
-        let _ = progress_tx.send(PipelineEvent::Progress(InstallProgress {
-            stage,
-            current: snapshot.current,
-            total: snapshot.total,
-            detail: progress_detail.clone(),
-            files_done: snapshot.files_done,
-            files_total: snapshot.files_total,
-            bytes_per_second: snapshot.bytes_per_second,
-        }));
-    })
+    download::download_batch_until(
+        client,
+        specs,
+        policy.concurrency,
+        tx.closed(),
+        move |snapshot| {
+            let _ = progress_tx.send(PipelineEvent::Progress(InstallProgress {
+                stage,
+                current: snapshot.current,
+                total: snapshot.total,
+                detail: progress_detail.clone(),
+                files_done: snapshot.files_done,
+                files_total: snapshot.files_total,
+                bytes_per_second: snapshot.bytes_per_second,
+            }));
+        },
+    )
     .await?;
 
     let _ = tx.send(PipelineEvent::Progress(InstallProgress {
