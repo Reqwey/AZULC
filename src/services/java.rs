@@ -146,7 +146,8 @@ pub fn required_major(minecraft_version: &str, manifest_requirement: Option<u32>
         .filter_map(|part| part.parse::<u32>().ok());
     let major = parts.next().unwrap_or(1);
     let minor = parts.next().unwrap_or(0);
-    if major > 1 || minor >= 20 {
+    let patch = parts.next().unwrap_or(0);
+    if major > 1 || minor > 20 || (minor == 20 && patch >= 5) {
         21
     } else if minor >= 18 {
         17
@@ -169,4 +170,124 @@ pub fn select(runtimes: &[JavaRuntime], required: u32) -> Option<JavaRuntime> {
                 .min_by_key(|j| j.major)
                 .cloned()
         })
+}
+
+pub(crate) fn compatibility_warning(
+    runtimes: &[JavaRuntime],
+    settings: &crate::domain::InstanceSettings,
+    required: u32,
+) -> Option<String> {
+    if !settings.auto_java {
+        let selected = runtimes
+            .iter()
+            .find(|runtime| Some(&runtime.path) == settings.java_path.as_ref());
+        return match selected {
+            Some(runtime) if runtime.major == required => None,
+            Some(runtime) => Some(format!(
+                "Java {required} is expected by this instance's launch configuration, but Java {} is selected. Choose Java {required} in Settings; other versions may not be compatible.",
+                runtime.major
+            )),
+            None => Some(format!(
+                "The selected Java runtime was not detected. Install or select Java {required}, then rescan Java."
+            )),
+        };
+    }
+    if runtimes.iter().any(|runtime| runtime.major == required) {
+        return None;
+    }
+    let mut versions: Vec<_> = runtimes.iter().map(|runtime| runtime.major).collect();
+    versions.sort_unstable();
+    versions.dedup();
+    let detected = if versions.is_empty() {
+        "No Java runtime was detected.".to_owned()
+    } else {
+        format!(
+            "Detected Java: {}.",
+            versions
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    Some(format!(
+        "Java {required} is expected by this instance's launch configuration. {detected} Install Java {required}, then rescan Java. A newer Java version is not necessarily compatible."
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::InstanceSettings;
+
+    fn runtime(major: u32) -> JavaRuntime {
+        JavaRuntime {
+            path: PathBuf::from(format!("java-{major}")),
+            version: major.to_string(),
+            major,
+            vendor: "Test".into(),
+        }
+    }
+
+    #[test]
+    fn java_25_does_not_satisfy_a_legacy_instance_warning_check() {
+        let warning =
+            compatibility_warning(&[runtime(25)], &InstanceSettings::default(), 8).unwrap();
+        assert!(warning.contains("Java 8"));
+        assert!(warning.contains("Detected Java: 25"));
+    }
+
+    #[test]
+    fn matching_runtime_clears_warning_even_with_newer_java_installed() {
+        assert!(
+            compatibility_warning(&[runtime(25), runtime(8)], &InstanceSettings::default(), 8)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn manual_selection_is_checked_even_when_a_matching_runtime_exists() {
+        let settings = InstanceSettings {
+            auto_java: false,
+            java_path: Some(runtime(25).path),
+            ..InstanceSettings::default()
+        };
+        assert!(
+            compatibility_warning(&[runtime(8), runtime(25)], &settings, 8)
+                .unwrap()
+                .contains("Java 25 is selected")
+        );
+    }
+
+    #[test]
+    fn missing_manual_runtime_is_reported() {
+        let settings = InstanceSettings {
+            auto_java: false,
+            java_path: Some(runtime(8).path),
+            ..InstanceSettings::default()
+        };
+        assert!(
+            compatibility_warning(&[runtime(25)], &settings, 8)
+                .unwrap()
+                .contains("was not detected")
+        );
+    }
+
+    #[test]
+    fn no_installed_java_is_reported() {
+        assert!(
+            compatibility_warning(&[], &InstanceSettings::default(), 17)
+                .unwrap()
+                .contains("No Java runtime")
+        );
+    }
+
+    #[test]
+    fn explicit_configuration_takes_precedence_over_minecraft_fallback() {
+        assert_eq!(required_major("1.7.10", Some(25)), 25);
+        assert_eq!(required_major("1.7.10", None), 8);
+        assert_eq!(required_major("1.20.1", None), 17);
+        assert_eq!(required_major("1.20.4", None), 17);
+        assert_eq!(required_major("1.20.5", None), 21);
+    }
 }

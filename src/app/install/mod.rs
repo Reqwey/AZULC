@@ -172,12 +172,14 @@ impl Launcher {
             self.persisted.instances.retain(|old| old.id != instance.id);
             self.persisted.instances.push(instance);
             self.last_instance_id = Some(id);
-            if self.route == Route::Installation(id) {
-                self.route = Route::instance(id);
-            }
+            let navigation = if self.route == Route::Installation(id) {
+                self.navigate(Route::instance(id))
+            } else {
+                Task::none()
+            };
             self.save();
             self.notice = Some("Instance installed. It is ready to launch.".into());
-            return self.refresh_insights();
+            return Task::batch([navigation, self.refresh_insights()]);
         }
         Task::none()
     }

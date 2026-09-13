@@ -69,6 +69,20 @@ pub(super) async fn wait(child: &mut Child, group: &mut Guard) -> io::Result<Exi
             Err(error) => return Err(error.into()),
         }
     }
-    group.terminate()?;
+    match group.terminate() {
+        Ok(()) => {}
+        // Darwin's killpg skips zombies and returns EPERM when no signalable
+        // members remain. WNOWAIT above intentionally keeps the exited leader
+        // as a zombie to reserve its PID. Accept this only during exit cleanup;
+        // explicit termination of a running process must still report EPERM.
+        // Darwin cannot distinguish this from descendants we lack permission
+        // to signal, so cleanup after leader exit is best effort in that case.
+        #[cfg(target_os = "macos")]
+        Err(error) if error.raw_os_error() == Some(Errno::PERM.raw_os_error()) => {
+            // Disarm before reaping so Drop cannot signal a reused process ID.
+            group.pid = None;
+        }
+        Err(error) => return Err(error),
+    }
     child.wait().await
 }

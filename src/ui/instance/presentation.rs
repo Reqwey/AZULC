@@ -85,7 +85,39 @@ pub(super) fn view<'a>(
         .height(Length::Shrink)
         .style(theme::square_scrollable);
 
-    column![header, tabs, rule::horizontal(1), page]
+    let warning = app
+        .instance_java_requirement
+        .as_ref()
+        .filter(|(id, _)| *id == instance.id)
+        .and_then(|(_, requirement)| match requirement {
+            Ok(_) if app.java_detecting => None,
+            Ok(required) => crate::services::java::compatibility_warning(
+                &app.java_runtimes,
+                &instance.settings,
+                *required,
+            ),
+            Err(error) => Some(format!("Unable to check Java compatibility: {error}")),
+        });
+    let mut layout = column![header, tabs];
+    if let Some(warning) = warning {
+        layout = layout.push(
+            row![
+                text(format!("JAVA WARNING — {warning}"))
+                    .font(theme::BODY_FONT)
+                    .size(13)
+                    .color(theme::WARNING)
+                    .width(Fill),
+                button(text("RESCAN JAVA").size(12))
+                    .on_press(Message::RefreshJava)
+                    .style(theme::ghost_button),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        );
+    }
+    layout
+        .push(rule::horizontal(1))
+        .push(page)
         .spacing(14)
         .width(Fill)
         .height(Fill)

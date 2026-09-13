@@ -325,7 +325,15 @@ impl Launcher {
                 }
             }
             Message::RetryLoaderCatalog => return self.refresh_loader_catalog(true),
-            Message::JavaLoaded(runtimes) => self.java_runtimes = runtimes,
+            Message::JavaLoaded(runtimes) => {
+                self.java_runtimes = runtimes;
+                self.java_detecting = false;
+            }
+            Message::InstanceJavaRequirementLoaded(request, id, requirement) => {
+                if request == self.java_requirement_request && self.route.target_id() == Some(id) {
+                    self.instance_java_requirement = Some((id, requirement));
+                }
+            }
             Message::InsightsLoaded(request_id, summary) => {
                 if request_id == self.insights_request_id {
                     self.insights = summary;
@@ -613,7 +621,13 @@ impl Launcher {
                 }
             }
             Message::InstallLocalModpack => return self.install_local_modpack(),
-            Message::RefreshJava => return Task::perform(java::detect(), Message::JavaLoaded),
+            Message::RefreshJava => {
+                if self.java_detecting {
+                    return Task::none();
+                }
+                self.java_detecting = true;
+                return Task::perform(java::detect(), Message::JavaLoaded);
+            }
             Message::RefreshPings => {
                 return Task::perform(super::bootstrap::load_pings(), Message::PingsLoaded);
             }
@@ -881,7 +895,7 @@ impl Launcher {
         Task::none()
     }
 
-    fn navigate(&mut self, requested: Route) -> Task<Message> {
+    pub(super) fn navigate(&mut self, requested: Route) -> Task<Message> {
         if let Some(id) = requested.target_id()
             && self.is_instance_deleting(id)
         {
@@ -900,7 +914,24 @@ impl Launcher {
                 }
                 self.route = requested;
                 self.last_instance_id = Some(id);
-                self.load_instance_content(id, tab)
+                self.java_requirement_request += 1;
+                let request = self.java_requirement_request;
+                self.instance_java_requirement = None;
+                let instance = self.instance(id).cloned();
+                let root = self.paths.minecraft.clone();
+                let requirement = Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            let instance =
+                                instance.ok_or_else(|| "Instance no longer exists.".to_owned())?;
+                            crate::services::launcher::instance_java_requirement(&root, &instance)
+                        })
+                        .await
+                        .unwrap_or_else(|error| Err(error.to_string()))
+                    },
+                    move |result| Message::InstanceJavaRequirementLoaded(request, id, result),
+                );
+                Task::batch([self.load_instance_content(id, tab), requirement])
             }
             Route::Installation(id) => {
                 let installation_exists = self

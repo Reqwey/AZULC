@@ -70,6 +70,7 @@ fn child_fixture() {
     };
     let directory = PathBuf::from(std::env::var_os("AZULC_PROCESS_TEST_DIR").unwrap());
     match mode.as_str() {
+        "success" => {}
         "output" => {
             std::io::stdout()
                 .write_all(b"stdout line\r\nnon-UTF8: \xff\nlast fragment")
@@ -105,6 +106,30 @@ fn child_fixture() {
         _ => panic!("unknown child mode"),
     }
     std::process::exit(0);
+}
+
+#[tokio::test]
+async fn normal_exit_without_descendants_is_not_a_cleanup_error() {
+    let fixture = Fixture::new();
+    // Exercise both processor and game policies. On macOS the unreaped leader
+    // is the only group member when exit cleanup sends SIGKILL.
+    for policy in [OnDrop::Terminate, OnDrop::Detach] {
+        let (status, terminated) = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_controlled(
+                &mut child_command("success", &fixture.0),
+                policy,
+                |_| {},
+                |_, _| {},
+                std::future::pending(),
+            ),
+        )
+        .await
+        .expect("normal exit stalled")
+        .expect("normal exit was reported as a cleanup error");
+        assert!(status.success());
+        assert!(!terminated);
+    }
 }
 
 #[tokio::test]

@@ -427,6 +427,18 @@ fn launch_line_is_ready(line: &str) -> bool {
     READY_FLAGS.iter().any(|flag| line.contains(flag))
 }
 
+pub(crate) fn instance_java_requirement(root: &Path, instance: &Instance) -> Result<u32, String> {
+    let chain = load_chain(root, &instance.version_id).map_err(|error| error.to_string())?;
+    let merged = merge_chain(&chain);
+    Ok(java::required_major(
+        &instance.minecraft_version,
+        merged
+            .java_version
+            .as_ref()
+            .map(|version| version.major_version),
+    ))
+}
+
 fn load_chain(root: &Path, version_id: &str) -> Result<Vec<VersionJson>, LaunchError> {
     const MAX_DEPTH: usize = 8;
 
@@ -800,6 +812,45 @@ mod tests {
             name: name.into(),
             ..Library::default()
         }
+    }
+
+    #[test]
+    fn java_requirement_uses_inherited_configuration_and_pack_override() {
+        let root = std::env::temp_dir().join(format!("azulc-java-requirement-{}", Uuid::new_v4()));
+        let instance: Instance = serde_json::from_value(serde_json::json!({
+            "id": Uuid::new_v4(), "name": "Pack", "minecraft_version": "1.7.10",
+            "version_id": "pack", "loader": {"kind": "Forge", "version": "test"},
+            "game_dir": root, "installed": true
+        }))
+        .unwrap();
+        for (id, profile) in [
+            (
+                "base",
+                serde_json::json!({"id": "base", "javaVersion": {"majorVersion": 8}}),
+            ),
+            (
+                "pack",
+                serde_json::json!({"id": "pack", "inheritsFrom": "base"}),
+            ),
+        ] {
+            let directory = root.join("versions").join(id);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(
+                directory.join(format!("{id}.json")),
+                serde_json::to_vec(&profile).unwrap(),
+            )
+            .unwrap();
+        }
+        assert_eq!(instance_java_requirement(&root, &instance).unwrap(), 8);
+        std::fs::write(
+            root.join("versions/pack/pack.json"),
+            br#"{"id":"pack","inheritsFrom":"base","javaVersion":{"majorVersion":25}}"#,
+        )
+        .unwrap();
+        assert_eq!(instance_java_requirement(&root, &instance).unwrap(), 25);
+        std::fs::write(root.join("versions/pack/pack.json"), b"invalid JSON").unwrap();
+        assert!(instance_java_requirement(&root, &instance).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

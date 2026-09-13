@@ -85,6 +85,7 @@ pub enum Message {
     ),
     RetryLoaderCatalog,
     JavaLoaded(Vec<JavaRuntime>),
+    InstanceJavaRequirementLoaded(u64, Uuid, Result<u32, String>),
     InsightsLoaded(u64, InstanceScanSummary),
     HighlightsLoaded(Result<VersionHighlights, String>),
     PingsLoaded(Vec<ServicePing>),
